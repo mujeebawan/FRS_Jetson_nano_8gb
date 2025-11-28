@@ -1,12 +1,12 @@
 # Project Progress - Face Recognition Security System
 
-**Last Updated**: 2025-11-28 02:45 UTC
+**Last Updated**: 2025-11-28 03:00 UTC
 **Device**: Jetson Orin Nano 8GB
 
-## Current Status: Step 2 - Building OpenCV with CUDA (~28% complete)
+## Current Status: Step 2 - Building OpenCV with CUDA (~35% complete)
 
 **Build started at**: 2025-11-28 02:13 UTC
-**Current progress**: ~28%
+**Current progress**: ~35% (compiling CUDA DNN modules)
 **Expected completion**: ~2-4 hours from start (around 04:00-06:00 UTC)
 **Log file**: `/home/tempuser/Downloads/frs/docs/opencv_build.log`
 
@@ -141,7 +141,8 @@ pip3 install -r /home/tempuser/Downloads/frs/backend/requirements.txt
 ├── reference/              # Previous project (cloned for reference)
 │   └── previous-project/
 └── scripts/
-    └── complete_opencv_install.sh  # Helper to finish OpenCV install
+    ├── complete_opencv_install.sh  # Helper to finish OpenCV install
+    └── setup_after_opencv.sh       # Full setup script (deps, models, test)
 ```
 
 ## How to Resume
@@ -154,7 +155,16 @@ tail -f /home/tempuser/Downloads/frs/docs/opencv_build.log
 
 ### If OpenCV build completed but not installed:
 ```bash
-/home/tempuser/Downloads/frs/scripts/complete_opencv_install.sh
+# 1. Install OpenCV
+cd ~/opencv/build
+sudo make install
+sudo ldconfig
+
+# 2. Verify OpenCV
+python3 -c "import cv2; print(cv2.__version__); print(cv2.cuda.getCudaEnabledDeviceCount())"
+
+# 3. Run full setup script
+/home/tempuser/Downloads/frs/scripts/setup_after_opencv.sh
 ```
 
 ### If OpenCV build failed or was interrupted:
