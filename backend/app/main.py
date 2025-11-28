@@ -76,9 +76,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",  # Vite default
-        f"http://{settings.app_host}:3000",
-        f"http://192.168.0.245:3000",
-        f"http://192.168.1.100:3000",
+        "http://192.168.0.245:5173",  # Vite on WiFi
+        "http://192.168.1.100:5173",  # Vite on Ethernet
+        "http://192.168.0.245:3000",
+        "http://192.168.1.100:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
