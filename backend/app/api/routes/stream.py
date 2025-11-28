@@ -47,7 +47,8 @@ async def mjpeg_stream(request: Request):
             while True:
                 try:
                     frame_data = await asyncio.wait_for(queue.get(), timeout=5.0)
-                    jpeg = stream.encode_jpeg(frame_data.frame, quality=75)
+                    # Use quality=65 for faster encoding, still good visual quality
+                    jpeg = stream.encode_jpeg(frame_data.frame, quality=65)
                     yield (
                         b"--frame\r\n"
                         b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"

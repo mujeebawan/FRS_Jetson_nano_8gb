@@ -88,20 +88,19 @@ class StreamManager:
             return True
 
         try:
-            # Initialize capture
-            self._capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+            # Try GStreamer hardware-accelerated pipeline first (Jetson optimized)
+            gst_pipeline = self._build_gstreamer_pipeline()
+            self._capture = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
             if not self._capture.isOpened():
-                # Try with GStreamer pipeline
-                gst_pipeline = self._build_gstreamer_pipeline()
-                self._capture = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+                logger.info("GStreamer failed, trying FFMPEG...")
+                # Fallback to FFMPEG with TCP transport
+                self._capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+                self._capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
             if not self._capture.isOpened():
                 logger.error("Failed to open video stream")
                 return False
-
-            # Set buffer size to reduce latency
-            self._capture.set(cv2.CAP_PROP_BUFFERSIZE, 2)
 
             self._running = True
             self._thread = threading.Thread(target=self._capture_loop, daemon=True)
@@ -130,7 +129,7 @@ class StreamManager:
 
     def _capture_loop(self):
         """Main capture loop running in separate thread."""
-        skip_counter = 0
+        process_counter = 0
 
         while self._running:
             try:
@@ -138,16 +137,12 @@ class StreamManager:
 
                 if not ret:
                     logger.warning("Frame read failed, reconnecting...")
-                    time.sleep(1)
+                    time.sleep(0.5)
                     self._reconnect()
                     continue
 
-                skip_counter += 1
-                if skip_counter <= self.frame_skip:
-                    continue
-                skip_counter = 0
-
                 self._frame_number += 1
+                process_counter += 1
 
                 # Create frame data
                 frame_data = FrameData(
@@ -156,8 +151,10 @@ class StreamManager:
                     frame_number=self._frame_number
                 )
 
-                # Process frame if processor is set
-                if self._processor:
+                # Process frame only every N frames (for face detection)
+                # But still broadcast ALL frames for smooth display
+                if self._processor and process_counter >= self.frame_skip:
+                    process_counter = 0
                     try:
                         frame_data = self._processor(frame_data)
                     except Exception as e:
@@ -167,7 +164,7 @@ class StreamManager:
                 with self._lock:
                     self._latest_frame = frame_data
 
-                # Broadcast to subscribers
+                # Broadcast to subscribers (all frames for smooth video)
                 self._broadcast(frame_data)
 
                 # Update FPS
@@ -175,7 +172,7 @@ class StreamManager:
 
             except Exception as e:
                 logger.error(f"Capture loop error: {e}")
-                time.sleep(0.1)
+                time.sleep(0.05)
 
     def _reconnect(self):
         """Attempt to reconnect to stream."""
