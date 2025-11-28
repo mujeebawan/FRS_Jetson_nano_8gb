@@ -1,7 +1,7 @@
 """System API routes"""
 
 from fastapi import APIRouter, Request
-from ..config import settings
+from ...config import settings
 
 router = APIRouter()
 
