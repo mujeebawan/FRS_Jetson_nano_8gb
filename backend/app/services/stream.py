@@ -7,6 +7,7 @@ Features:
 - Motion-triggered face detection (via Hikvision ISAPI VMD)
 - Multi-client WebSocket broadcasting
 - Minimal latency pipeline
+- ASYNC processing: Detection runs in separate thread, never blocks stream
 """
 
 import cv2
@@ -19,7 +20,7 @@ from typing import Optional, Callable, List, Set, Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from .processor import FrameProcessor
 from dataclasses import dataclass
-from queue import Queue
+from queue import Queue, Empty
 import time
 
 from ..config import settings
@@ -93,6 +94,11 @@ class StreamManager:
         self._processor: Optional[Any] = None
         self._processor_obj: Optional["FrameProcessor"] = None
 
+        # Async processing - separate thread for detection (never blocks stream)
+        self._process_thread: Optional[threading.Thread] = None
+        self._process_queue: Queue = Queue(maxsize=2)  # Only keep latest frames
+        self._process_counter = 0
+
         # Stats
         self._fps = 0.0
         self._last_fps_time = time.time()
@@ -139,10 +145,16 @@ class StreamManager:
                 logger.info("Motion trigger started")
 
             self._running = True
+
+            # Start capture thread (fast, never blocks)
             self._thread = threading.Thread(target=self._capture_loop, daemon=True)
             self._thread.start()
 
-            logger.info("Stream capture started")
+            # Start processing thread (separate, handles detection)
+            self._process_thread = threading.Thread(target=self._processing_loop, daemon=True)
+            self._process_thread.start()
+
+            logger.info("Stream capture started (async processing enabled)")
             return True
 
         except Exception as e:
@@ -168,9 +180,11 @@ class StreamManager:
         )
 
     def _capture_loop(self):
-        """Main capture loop running in separate thread."""
-        process_counter = 0
-
+        """
+        Main capture loop - FAST, never blocks.
+        Only captures frames, draws cached overlays, and broadcasts.
+        Detection happens in separate _processing_loop thread.
+        """
         while self._running:
             try:
                 ret, frame = self._capture.read()
@@ -182,14 +196,14 @@ class StreamManager:
                     continue
 
                 self._frame_number += 1
-                process_counter += 1
+                self._process_counter += 1
 
                 # Check if motion is detected (if trigger enabled)
                 has_motion = True  # Default: always process
                 if self._motion_trigger:
                     has_motion = self._motion_trigger.should_process()
 
-                # Create frame data - no copy needed, we'll copy only when drawing
+                # Create frame data
                 frame_data = FrameData(
                     frame=frame,
                     timestamp=time.time(),
@@ -197,29 +211,40 @@ class StreamManager:
                     has_motion=has_motion
                 )
 
-                # Process frame only every N frames AND when motion detected
+                # Queue frame for async processing (non-blocking)
                 should_process = (
                     self._processor_obj and
-                    process_counter >= self.frame_skip and
+                    self._process_counter >= self.frame_skip and
                     has_motion
                 )
 
                 if should_process:
-                    process_counter = 0
-                    self._processed_frames += 1
+                    self._process_counter = 0
+                    # Non-blocking put - drop old frames if queue full
                     try:
-                        # Full detection + recognition
-                        frame_data = self._processor_obj.process(frame_data, detect=True)
-                    except Exception as e:
-                        logger.error(f"Frame processor error: {e}")
-                elif self._processor_obj:
-                    # Just draw cached overlays (very fast - no detection)
-                    if not has_motion:
-                        self._skipped_frames += 1
+                        # Clear old frame if queue full
+                        if self._process_queue.full():
+                            try:
+                                self._process_queue.get_nowait()
+                                self._skipped_frames += 1
+                            except Empty:
+                                pass
+                        # Queue new frame (copy for thread safety)
+                        self._process_queue.put_nowait(FrameData(
+                            frame=frame.copy(),
+                            timestamp=frame_data.timestamp,
+                            frame_number=frame_data.frame_number,
+                            has_motion=has_motion
+                        ))
+                    except:
+                        pass  # Queue full, skip this frame
+
+                # Draw cached overlays (very fast, ~1ms)
+                if self._processor_obj:
                     try:
                         frame_data = self._processor_obj.draw_overlay(frame_data)
                     except Exception as e:
-                        pass  # Ignore errors for overlay-only frames
+                        pass  # Ignore overlay errors
 
                 # Update latest frame
                 with self._lock:
@@ -234,6 +259,35 @@ class StreamManager:
             except Exception as e:
                 logger.error(f"Capture loop error: {e}")
                 time.sleep(0.01)
+
+    def _processing_loop(self):
+        """
+        Separate processing thread for face detection/recognition.
+        Runs independently, never blocks the capture loop.
+        """
+        logger.info("Processing thread started")
+
+        while self._running:
+            try:
+                # Wait for frame with timeout
+                try:
+                    frame_data = self._process_queue.get(timeout=0.1)
+                except Empty:
+                    continue
+
+                # Process frame (detection + recognition)
+                if self._processor_obj:
+                    try:
+                        self._processor_obj.process(frame_data, detect=True)
+                        self._processed_frames += 1
+                    except Exception as e:
+                        logger.error(f"Frame processor error: {e}")
+
+            except Exception as e:
+                logger.error(f"Processing loop error: {e}")
+                time.sleep(0.01)
+
+        logger.info("Processing thread stopped")
 
     def _reconnect(self):
         """Attempt to reconnect to stream."""
@@ -279,13 +333,19 @@ class StreamManager:
             self._last_fps_time = current_time
 
     def stop(self):
-        """Stop stream capture and motion trigger."""
+        """Stop stream capture, processing thread, and motion trigger."""
         self._running = False
 
         # Stop motion trigger
         if self._motion_trigger:
             self._motion_trigger.stop()
 
+        # Stop processing thread
+        if self._process_thread:
+            self._process_thread.join(timeout=2.0)
+            self._process_thread = None
+
+        # Stop capture thread
         if self._thread:
             self._thread.join(timeout=2.0)
             self._thread = None
@@ -293,6 +353,13 @@ class StreamManager:
         if self._capture:
             self._capture.release()
             self._capture = None
+
+        # Clear queue
+        while not self._process_queue.empty():
+            try:
+                self._process_queue.get_nowait()
+            except Empty:
+                break
 
         logger.info(f"Stream capture stopped. Processed: {self._processed_frames}, Skipped: {self._skipped_frames}")
 

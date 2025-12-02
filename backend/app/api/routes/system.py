@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 from ...config import settings
 from ...services.system_monitor import get_system_monitor
+from ...services.settings_store import get_settings_store
 
 router = APIRouter()
 
@@ -174,12 +175,13 @@ async def update_settings(
     Update runtime settings.
 
     Settings are applied immediately to the running system without restart.
-    The stream continues with the new settings.
+    Changes are persisted to data/settings.json and will be loaded on next startup.
     """
     detector = request.app.state.detector
     recognizer = request.app.state.recognizer
     stream = request.app.state.stream
     alert_manager = request.app.state.alert_manager
+    settings_store = get_settings_store()
 
     # Support both body and query params
     if settings_update:
@@ -190,6 +192,7 @@ async def update_settings(
         alert_cooldown_seconds = settings_update.alert_cooldown_seconds or alert_cooldown_seconds
 
     updated = {}
+    persisted = {}
     errors = []
 
     # Update detection confidence
@@ -198,6 +201,7 @@ async def update_settings(
             if hasattr(detector, 'min_confidence'):
                 detector.min_confidence = detection_confidence
             updated["detection_confidence"] = detection_confidence
+            persisted["detection_confidence"] = detection_confidence
         else:
             errors.append("detection_confidence must be between 0.1 and 1.0")
 
@@ -207,6 +211,7 @@ async def update_settings(
             if hasattr(recognizer, 'threshold'):
                 recognizer.threshold = recognition_threshold
             updated["recognition_threshold"] = recognition_threshold
+            persisted["recognition_threshold"] = recognition_threshold
         else:
             errors.append("recognition_threshold must be between 0.1 and 1.0")
 
@@ -216,6 +221,7 @@ async def update_settings(
             if hasattr(stream, 'frame_skip'):
                 stream.frame_skip = frame_skip
             updated["frame_skip"] = frame_skip
+            persisted["frame_skip"] = frame_skip
         else:
             errors.append("frame_skip must be between 1 and 10")
 
@@ -230,6 +236,7 @@ async def update_settings(
             elif not enable_motion_trigger and stream._motion_trigger:
                 stream._motion_trigger.stop()
         updated["enable_motion_trigger"] = enable_motion_trigger
+        persisted["enable_motion_trigger"] = enable_motion_trigger
 
     # Update alert cooldown
     if alert_cooldown_seconds is not None:
@@ -237,12 +244,18 @@ async def update_settings(
             if hasattr(alert_manager, '_cooldown_seconds'):
                 alert_manager._cooldown_seconds = alert_cooldown_seconds
             updated["alert_cooldown_seconds"] = alert_cooldown_seconds
+            persisted["alert_cooldown_seconds"] = alert_cooldown_seconds
         else:
             errors.append("alert_cooldown_seconds must be between 1 and 300")
+
+    # Persist settings to file
+    if persisted:
+        settings_store.update(persisted)
 
     response = {
         "success": len(errors) == 0,
         "updated": updated,
+        "persisted": len(persisted) > 0,
         "current": {
             "detection_confidence": detector.min_confidence if hasattr(detector, 'min_confidence') else settings.detection_confidence,
             "recognition_threshold": recognizer.threshold if hasattr(recognizer, 'threshold') else settings.recognition_threshold,
@@ -434,11 +447,19 @@ async def change_model(
             logger.info("Restarting stream with new model...")
             stream.start()  # Not async
 
+        # Persist model selection
+        settings_store = get_settings_store()
+        settings_store.update({
+            "recognition_model": model,
+            "use_fp16": "_fp16" in model_name
+        })
+
         response = {
             "success": True,
             "model": model_name,
             "using_fp16": "_fp16" in model_name,
             "embeddings_count": recognizer.count,
+            "persisted": True,
             "message": f"Successfully switched to {model_name}"
         }
 

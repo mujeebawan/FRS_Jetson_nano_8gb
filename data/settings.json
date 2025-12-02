@@ -1,0 +1,11 @@
+{
+  "detection_confidence": 0.5,
+  "recognition_threshold": 0.55,
+  "frame_skip": 2,
+  "enable_motion_trigger": true,
+  "alert_cooldown_seconds": 10,
+  "recognition_model": "buffalo_l",
+  "use_fp16": true,
+  "alert_on_unknown": false,
+  "alert_on_known": true
+}

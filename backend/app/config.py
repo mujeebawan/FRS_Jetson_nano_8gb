@@ -1,15 +1,38 @@
 """
 Application configuration.
-Loads settings from environment variables.
+Loads settings from environment variables and persistent storage.
+
+Priority (highest to lowest):
+1. Environment variables / .env file
+2. Persisted settings (data/settings.json)
+3. Default values
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from typing import Optional
+import json
+from pathlib import Path
+
+
+def _load_persisted_settings() -> dict:
+    """Load persisted settings from JSON file."""
+    settings_file = Path("data/settings.json")
+    if settings_file.exists():
+        try:
+            with open(settings_file, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+# Load persisted settings once at module load
+_persisted = _load_persisted_settings()
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from .env file"""
+    """Application settings loaded from .env file and persistent storage"""
 
     # Camera Configuration
     camera_ip: str = "192.168.1.64"
@@ -40,17 +63,17 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///./data/face_recognition.db"
 
-    # Face Recognition Settings
-    detection_confidence: float = 0.5
-    recognition_threshold: float = 0.4
+    # Face Recognition Settings (with persistent defaults)
+    detection_confidence: float = _persisted.get("detection_confidence", 0.5)
+    recognition_threshold: float = _persisted.get("recognition_threshold", 0.4)
 
-    # Processing Settings
+    # Processing Settings (with persistent defaults)
     process_stream: str = "sub"  # main, sub, or third (sub=channel 102 for better quality)
-    frame_skip: int = 2  # Process every Nth frame (2 = more frequent detection with GPU+FP16)
+    frame_skip: int = _persisted.get("frame_skip", 1)  # Default 1 for lowest latency
     max_faces: int = 5  # Max faces to process per frame
 
     # Motion-based processing (disabled by default - camera VMD not configured)
-    enable_motion_trigger: bool = False
+    enable_motion_trigger: bool = _persisted.get("enable_motion_trigger", False)
     motion_sensitivity: float = 0.3
 
     # Security
@@ -64,21 +87,18 @@ class Settings(BaseSettings):
     embeddings_dir: str = "data/embeddings"
     snapshots_dir: str = "data/snapshots"
 
-    # Alert Settings
-    alert_cooldown_seconds: int = 10  # Reduced from 60s for faster testing
-    alert_on_unknown: bool = False  # Only alert on known watchlist persons
-    alert_on_known: bool = True
+    # Alert Settings (with persistent defaults)
+    alert_cooldown_seconds: int = _persisted.get("alert_cooldown_seconds", 10)
+    alert_on_unknown: bool = _persisted.get("alert_on_unknown", False)
+    alert_on_known: bool = _persisted.get("alert_on_known", True)
     alert_save_snapshot: bool = True
 
     # Reference images directory (enrolled person photos)
     reference_images_dir: str = "data/images"
 
-    # Model Configuration (optimized for Jetson Orin Nano 8GB)
-    # Model packs: buffalo_s (smaller/faster) or buffalo_l (larger/more accurate)
-    # Detection uses SCRFD from the model pack
-    # Recognition uses ArcFace from the model pack
-    recognition_model: str = "buffalo_s"  # buffalo_s (88MB FP16) or buffalo_l (171MB FP16)
-    use_fp16: bool = True  # FP16 models for faster GPU inference
+    # Model Configuration (with persistent defaults)
+    recognition_model: str = _persisted.get("recognition_model", "buffalo_s")
+    use_fp16: bool = _persisted.get("use_fp16", True)
     use_gpu: bool = True  # GPU enabled by default
 
     # FAISS Settings
