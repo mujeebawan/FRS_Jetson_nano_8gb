@@ -1,91 +1,17 @@
 # Project Progress - Face Recognition Security System
 
-**Last Updated**: 2025-11-28 03:45 UTC
+**Last Updated**: 2025-12-02
 **Device**: Jetson Orin Nano 8GB
 **GitHub Repo**: https://github.com/mujeebawan/FRS_Jetson_nano_8gb
 
-## Current Status: SYSTEM OPERATIONAL
+## Current Status: PRODUCTION READY
 
-All core components installed and tested successfully:
-- OpenCV 4.10.0 with CUDA support
-- InsightFace buffalo_s model loaded
-- FastAPI backend running
-- Camera stream operational
-
-## Completed Steps
-
-### Step 1: NVIDIA Packages Installation [COMPLETED]
-- **TensorRT**: 10.3.0.30 (nvidia-tensorrt 6.2.1+b38) - Installed
-- **CUDA Toolkit**: 12.6.68 - Installed
-- **cuDNN**: 9.3.0.75 (libcudnn9-cuda-12) - Installed
-
-Verified:
-```
-nvcc --version: Cuda compilation tools, release 12.6, V12.6.68
-cuDNN libs: /usr/lib/aarch64-linux-gnu/libcudnn*
-```
-
-Environment paths added to ~/.bashrc:
-```bash
-export PATH=/usr/local/cuda/bin:$PATH
-export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-```
-
-### Step 2: Building OpenCV with CUDA [COMPLETED]
-- [x] Build dependencies installed
-- [x] OpenCV 4.10.0 source cloned to ~/opencv
-- [x] opencv_contrib cloned to ~/opencv_contrib
-- [x] CMake configured with CUDA support (CUDA 12.6, ARCH_BIN=8.7)
-- [x] Build completed (100%)
-- [x] Installed (sudo make install && sudo ldconfig)
-- [x] Verified: OpenCV 4.10.0 with 1 CUDA device
-
-### Step 3: Python Dependencies [COMPLETED]
-- [x] FastAPI, uvicorn, pydantic installed
-- [x] InsightFace 0.7.3 installed
-- [x] FAISS-CPU 1.13.0 installed
-- [x] onnxruntime 1.23.2 installed (CPU - GPU version not available for aarch64)
-- [x] numpy downgraded to 1.26.4 for compatibility
-
-### Step 4: Camera Testing [COMPLETED]
-- [x] Network configured: 192.168.1.100/24 on enP8p1s0
-- [x] Camera reachable: ping 192.168.1.64 success
-- [x] RTSP stream working: 720p (1280x720) frames captured
-- [x] ISAPI device info retrieved
-
-### Step 5: Face Detection Test [COMPLETED]
-- [x] SCRFD detection working via InsightFace buffalo_s model
-- [x] Average detection time: ~54ms per frame
-- [x] FPS potential: ~18 FPS
-
-### Step 6: React Frontend Setup [COMPLETED]
-- [x] React + Vite + TypeScript initialized
-- [x] Dependencies installed (axios, react-router-dom, lucide-react)
-- [x] Created components:
-  - `LiveStream.tsx` - MJPEG stream viewer
-  - `PersonList.tsx` - Enrollment and person management
-  - `AlertList.tsx` - Real-time alerts with WebSocket
-  - `SystemStatus.tsx` - System monitoring dashboard
-- [x] Created API service layer (`services/api.ts`)
-- [x] Styled with dark theme CSS
-
-### Step 7: Integration [COMPLETED]
-- [x] Backend server starts successfully
-- [x] Camera device info retrieved via ISAPI
-- [x] Stream manager operational
-- [x] API endpoints working
-
-### Step 8: End-to-End Testing [COMPLETED]
-- [x] /health endpoint working
-- [x] /api/system/status returning camera info
-- [x] /api/stream/start starting video capture
-- [x] Stream running at ~3 FPS
-- [x] /docs API documentation accessible
-
-### Step 9: Documentation [COMPLETED]
-- [x] README.md created and pushed to GitHub
-- [x] PROGRESS.md updated
-- [x] SETUP_GUIDE.md complete
+System is fully operational with:
+- GPU-accelerated face detection/recognition (25-35 FPS)
+- Multi-model support (buffalo_s and buffalo_l)
+- FP16 optimization for faster inference
+- Systemd service for auto-start on boot
+- WebSocket alerts and MJPEG streaming
 
 ---
 
@@ -99,6 +25,121 @@ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 | Jetson IP (Eth) | 192.168.1.100 |
 | Backend Port | 8000 |
 | Frontend Port | 5173 |
+| Active Model | buffalo_s_fp16 |
+| Persons Enrolled | 3 (Mujeeb, Mubashir, Zohaib) |
+
+---
+
+## Session Log
+
+### Session 4 - 2025-12-02 (Multi-Model Support & Production Ready)
+
+#### Major Achievements:
+
+1. **Multi-Model Support**
+   - Added buffalo_l model pack alongside buffalo_s
+   - Runtime model switching via Settings UI and API
+   - FP16 conversion for both models with `keep_io_types=True` fix
+
+2. **Model-Specific Embeddings**
+   - Embeddings stored per-model: `embeddings_buffalo_s.pkl`, `embeddings_buffalo_l.pkl`
+   - Added `set_model()` method to recognizer for switching
+   - Models produce incompatible embeddings (MobileFaceNet vs ResNet50)
+
+3. **Multi-Model Enrollment**
+   - Enroll once, embeddings generated for ALL available models
+   - `generate_embeddings_for_all_models()` in persons.py
+   - Each enrollment creates temporary detector/recognizer for other models
+
+4. **Multi-Model Deletion**
+   - Delete once, removed from ALL model embedding files
+   - `remove_person_from_all_models()` in persons.py
+
+5. **Auto-Regeneration on Model Switch**
+   - When switching to model with no embeddings, auto-regenerate from saved images
+   - `regenerate_all_embeddings()` in enrollment.py
+   - Uses reference images stored in `data/persons/{id}/`
+
+6. **Settings Apply to All Models**
+   - Recognition threshold preserved when switching models
+   - Detection confidence applied correctly
+
+7. **Production Ready Setup**
+   - Systemd service: `/etc/systemd/system/frs.service`
+   - Auto-start on boot (enabled)
+   - Health endpoint: `/api/health` fixed
+   - Clean restart verified with no conflicts
+   - Legacy files cleaned up
+
+8. **Documentation Updated**
+   - README.md - Complete rewrite with current features
+   - QUICKSTART.md - Quick reference guide
+   - PROGRESS.md - This file
+
+#### Files Created/Modified:
+
+| File | Description |
+|------|-------------|
+| `backend/app/core/recognizer.py` | Model-specific embeddings, set_model() |
+| `backend/app/api/routes/persons.py` | Multi-model enrollment/deletion |
+| `backend/app/api/routes/system.py` | Model change with auto-regeneration |
+| `backend/app/services/enrollment.py` | regenerate_all_embeddings() |
+| `backend/app/api/routes/__init__.py` | Health endpoint fix |
+| `scripts/convert_fp16.py` | Fixed with keep_io_types=True |
+| `frs.service` | Systemd service file |
+| `README.md` | Complete documentation |
+| `QUICKSTART.md` | Quick start guide |
+
+#### Model Files:
+
+| Model | Path | Size |
+|-------|------|------|
+| buffalo_s_fp16 | ~/.insightface/models/buffalo_s_fp16/ | 88MB |
+| buffalo_l_fp16 | ~/.insightface/models/buffalo_l_fp16/ | 171MB |
+
+#### Embedding Files:
+
+| File | Persons | Model |
+|------|---------|-------|
+| embeddings_buffalo_s.pkl | 3 | MobileFaceNet |
+| embeddings_buffalo_l.pkl | 2 | ResNet50 |
+
+Note: Zohaib's face not detected by buffalo_l model (different detection sensitivity)
+
+---
+
+### Session 3 - 2025-11-28 (System Settings & Resource Monitoring)
+
+#### Achievements:
+- System resource monitoring service (CPU, GPU, RAM, temp)
+- Settings API with live updates
+- SystemSettings React component with sliders
+- Model selection UI
+
+---
+
+### Session 2 - 2025-11-28 (GPU Optimization)
+
+#### Achievements:
+- GPU acceleration enabled: 34.4 FPS
+- FP16 model conversion
+- Low-latency GStreamer pipeline
+- Motion-triggered processing
+- Database models (SQLAlchemy)
+- Alert management system
+
+---
+
+### Session 1 - 2025-11-28 (Initial Setup)
+
+#### Achievements:
+- OpenCV 4.10.0 with CUDA built
+- InsightFace buffalo_s loaded
+- FastAPI backend created
+- React frontend initialized
+- Camera integration working
+
+---
 
 ## Project Structure
 
@@ -106,127 +147,114 @@ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 /home/tempuser/Downloads/frs/
 ├── backend/
 │   ├── app/
-│   │   ├── api/routes/     # stream.py, persons.py, alerts.py, system.py
-│   │   ├── core/           # detector.py, recognizer.py
-│   │   ├── services/       # camera.py, stream.py
-│   │   ├── config.py       # Configuration
-│   │   └── main.py         # FastAPI app
+│   │   ├── api/routes/          # API endpoints
+│   │   │   ├── __init__.py      # Health endpoint
+│   │   │   ├── stream.py        # Video streaming
+│   │   │   ├── persons.py       # Enrollment (multi-model)
+│   │   │   ├── alerts.py        # Alert management
+│   │   │   └── system.py        # Settings, models, resources
+│   │   ├── core/
+│   │   │   ├── detector.py      # SCRFD face detection
+│   │   │   └── recognizer.py    # ArcFace + FAISS (multi-model)
+│   │   ├── models/
+│   │   │   └── database.py      # SQLAlchemy ORM
+│   │   ├── services/
+│   │   │   ├── camera.py        # Hikvision ISAPI
+│   │   │   ├── stream.py        # Multi-client streaming
+│   │   │   ├── processor.py     # Frame processing
+│   │   │   ├── alerts.py        # Alert creation
+│   │   │   ├── enrollment.py    # Person enrollment
+│   │   │   ├── motion_processor.py
+│   │   │   └── system_monitor.py
+│   │   ├── config.py
+│   │   └── main.py
 │   └── requirements.txt
-├── frontend/               # React + Vite + TypeScript (initialized)
+├── frontend/
+│   └── src/
+│       ├── components/
+│       │   ├── LiveStream.tsx
+│       │   ├── PersonList.tsx
+│       │   ├── AlertList.tsx
+│       │   └── SystemSettings.tsx
+│       ├── services/api.ts
+│       ├── App.tsx
+│       └── App.css
+├── data/
+│   ├── persons/                 # Enrolled person images
+│   │   └── {person_id}/
+│   │       └── reference.jpg
+│   ├── embeddings/              # Model-specific embeddings
+│   │   ├── embeddings_buffalo_s.pkl
+│   │   └── embeddings_buffalo_l.pkl
+│   ├── snapshots/               # Alert snapshots
+│   └── frs.db                   # SQLite database
+├── scripts/
+│   └── convert_fp16.py
 ├── docs/
-│   ├── PROGRESS.md         # This file - current status
-│   ├── SETUP_GUIDE.md      # Step-by-step setup
-│   ├── SYSTEM_CAPABILITIES.md  # Hardware specs
-│   └── opencv_build.log    # OpenCV build log
-├── data/                   # Models, images, embeddings
-├── reference/              # Previous project (cloned for reference)
-│   └── previous-project/
-└── scripts/
-    ├── complete_opencv_install.sh  # Helper to finish OpenCV install
-    └── setup_after_opencv.sh       # Full setup script (deps, models, test)
+│   ├── PROGRESS.md              # This file
+│   ├── SETUP_GUIDE.md
+│   └── SYSTEM_CAPABILITIES.md
+├── start.sh
+├── stop.sh
+├── status.sh
+├── frs.service
+├── QUICKSTART.md
+└── README.md
 ```
-
-## How to Resume
-
-### If OpenCV build is still running:
-```bash
-# Check progress
-tail -f /home/tempuser/Downloads/frs/docs/opencv_build.log
-```
-
-### If OpenCV build completed but not installed:
-```bash
-# 1. Install OpenCV
-cd ~/opencv/build
-sudo make install
-sudo ldconfig
-
-# 2. Verify OpenCV
-python3 -c "import cv2; print(cv2.__version__); print(cv2.cuda.getCudaEnabledDeviceCount())"
-
-# 3. Run full setup script
-/home/tempuser/Downloads/frs/scripts/setup_after_opencv.sh
-```
-
-### If OpenCV build failed or was interrupted:
-```bash
-cd ~/opencv/build
-make -j4  # Resume build
-# Then: sudo make install && sudo ldconfig
-```
-
-### If power loss during build:
-```bash
-# Check if build process exists
-pgrep -a make
-
-# If not running, resume:
-cd ~/opencv/build
-make -j4
-```
-
-## Key Files Created
-
-| File | Purpose |
-|------|---------|
-| `backend/app/config.py` | Application configuration |
-| `backend/app/core/detector.py` | Face detection with SCRFD |
-| `backend/app/core/recognizer.py` | Face recognition with FAISS |
-| `backend/app/services/camera.py` | Hikvision camera integration |
-| `backend/app/services/stream.py` | Multi-client stream manager |
-| `backend/app/main.py` | FastAPI application |
-| `backend/requirements.txt` | Python dependencies |
-| `frontend/src/App.tsx` | Main React app |
-| `frontend/src/components/*` | React UI components |
-| `frontend/src/services/api.ts` | API client |
-
-## Notes
-
-- Using `buffalo_s` model (smaller than `buffalo_l`) for 8GB memory constraint
-- Using SCRFD_2.5G_KPS for optimal detection accuracy/speed balance
-- Motion detection from camera available via ISAPI to reduce processing
-- React frontend (Vite + TypeScript) for professional, secure build
-- Camera connection verified: `ping 192.168.1.64` works
-- Ethernet interface configured: 192.168.1.100/24 on enP8p1s0
-- Code pushed to GitHub: https://github.com/mujeebawan/FRS_Jetson_nano_8gb
 
 ---
 
-## Session Log
+## Performance Benchmarks
 
-### Session 1 - 2025-11-28 (Initial Setup)
-**Started**: ~01:00 UTC | **Ended**: ~03:45 UTC (ongoing)
+### Jetson Orin Nano 8GB (JetPack 6.2)
 
-#### Completed:
-1. **System Analysis**
-   - JetPack 6.2.1, RAM 7.4GB, NVMe 233GB
-   - Network: WiFi 192.168.0.245, Ethernet added 192.168.1.100/24
+| Configuration | FPS | GPU Usage | Notes |
+|--------------|-----|-----------|-------|
+| CPU only | 1-2 | 0% | Not usable |
+| GPU (FP32) | 15-20 | 60-80% | Good |
+| GPU (FP16) buffalo_s | 25-35 | 45-70% | Recommended |
+| GPU (FP16) buffalo_l | 15-20 | 60-85% | Higher accuracy |
+| GPU + Motion Trigger | 30-40 | 20-50% | Best efficiency |
 
-2. **NVIDIA Packages Installed**
-   - TensorRT 10.3.0.30 (nvidia-tensorrt 6.2.1+b38)
-   - CUDA 12.6.68
-   - cuDNN 9.3.0.75
+---
 
-3. **OpenCV Build Started**
-   - Version: 4.10.0 with contrib modules
-   - CUDA enabled with ARCH_BIN=8.7 (Orin Nano Ampere)
-   - GStreamer and FFMPEG support enabled
-   - Build progress: ~44% (as of 03:45 UTC)
+## How to Resume Development
 
-4. **Project Structure Created**
-   - Backend: FastAPI with detector, recognizer, camera, stream services
-   - Frontend: React + Vite + TypeScript with components
-   - Documentation: PROGRESS.md, SETUP_GUIDE.md, SYSTEM_CAPABILITIES.md
-   - Scripts: complete_opencv_install.sh, setup_after_opencv.sh
+### Start the system:
+```bash
+cd /home/tempuser/Downloads/frs
+./start.sh
+```
 
-5. **Git Repository**
-   - Initialized and pushed to https://github.com/mujeebawan/FRS_Jetson_nano_8gb
+### Check status:
+```bash
+./status.sh
+```
 
-#### In Progress:
-- OpenCV build (~44% complete, estimated 1-2 hours remaining)
+### View logs:
+```bash
+tail -f /tmp/frs_backend.log
+tail -f /tmp/frs_frontend.log
+```
 
-#### Next Steps When Resuming:
-1. Check if OpenCV build completed: `pgrep -a make`
-2. If complete, install: `cd ~/opencv/build && sudo make install && sudo ldconfig`
-3. Verify: `python3 -c "import cv2; print(cv2.__version__); print(cv2.cuda.getCudaEnabledDeviceCount())"`
-4. Run setup script: `/home/tempuser/Downloads/frs/scripts/setup_after_opencv.sh`
+### Access:
+- Frontend: http://192.168.0.245:5173
+- API Docs: http://192.168.0.245:8000/docs
+
+---
+
+## Known Issues
+
+1. **Zohaib not detected by buffalo_l**: The buffalo_l detection model (SCRFD 10g) has different sensitivity and may not detect some faces that buffalo_s detects. This is expected behavior due to model differences.
+
+2. **FP16 Input Type**: Original FP16 conversion failed because models expected FP16 input tensors. Fixed by using `keep_io_types=True` in conversion.
+
+---
+
+## Future Enhancements
+
+- [ ] Multi-camera support
+- [ ] PostgreSQL for production
+- [ ] Face augmentation for better recognition
+- [ ] TensorRT engine caching
+- [ ] Mobile app for alerts

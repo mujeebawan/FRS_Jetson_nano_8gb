@@ -1,6 +1,6 @@
 """API route modules"""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from .stream import router as stream_router
 from .persons import router as persons_router
@@ -8,6 +8,23 @@ from .alerts import router as alerts_router
 from .system import router as system_router
 
 api_router = APIRouter()
+
+
+@api_router.get("/health")
+async def health_check(request: Request):
+    """Health check endpoint for startup and monitoring."""
+    from ...config import settings
+
+    stream = getattr(request.app.state, 'stream', None)
+    recognizer = getattr(request.app.state, 'recognizer', None)
+
+    return {
+        "status": "healthy",
+        "camera_ip": settings.camera_ip,
+        "stream_running": stream.is_running if stream else False,
+        "persons_enrolled": recognizer.person_count if recognizer else 0
+    }
+
 
 api_router.include_router(stream_router, prefix="/stream", tags=["Stream"])
 api_router.include_router(persons_router, prefix="/persons", tags=["Persons"])

@@ -1,0 +1,30 @@
+[Unit]
+Description=Face Recognition Security System
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+# Wait for ethernet to be fully configured
+After=NetworkManager-wait-online.service
+
+[Service]
+Type=forking
+User=tempuser
+WorkingDirectory=/home/tempuser/Downloads/frs
+# Start delay to ensure network is stable
+ExecStartPre=/bin/sleep 5
+ExecStart=/home/tempuser/Downloads/frs/start.sh
+ExecStop=/home/tempuser/Downloads/frs/stop.sh
+Restart=on-failure
+RestartSec=10
+# Extended environment
+Environment=PATH=/home/tempuser/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/tempuser
+Environment=PYTHONPATH=/home/tempuser/Downloads/frs
+# Correct PID file location
+PIDFile=/tmp/frs.pid
+# Give time for AI models to load
+TimeoutStartSec=120
+# Ensure GPU access
+SupplementaryGroups=video
+
+[Install]
+WantedBy=multi-user.target

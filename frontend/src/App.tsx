@@ -3,6 +3,7 @@ import { LiveStream } from './components/LiveStream';
 import { PersonList } from './components/PersonList';
 import { AlertList } from './components/AlertList';
 import { SystemStatus } from './components/SystemStatus';
+import { SystemSettings } from './components/SystemSettings';
 import { Monitor, Users, Bell, Settings } from 'lucide-react';
 import './App.css';
 
@@ -68,15 +69,13 @@ function App() {
 
         {activeTab === 'alerts' && (
           <div className="alerts-page">
-            <AlertList />
+            <AlertList fullPage={true} />
           </div>
         )}
 
         {activeTab === 'settings' && (
           <div className="settings-page">
-            <h2>Settings</h2>
-            <p>Settings panel coming soon...</p>
-            <SystemStatus />
+            <SystemSettings />
           </div>
         )}
       </main>

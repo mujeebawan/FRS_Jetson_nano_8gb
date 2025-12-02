@@ -24,13 +24,21 @@ async def stop_stream(request: Request):
 
 @router.get("/status")
 async def stream_status(request: Request):
-    """Get stream status."""
+    """Get stream status including motion detection stats."""
     stream = request.app.state.stream
-    return {
+    response = {
         "running": stream.is_running,
         "fps": stream.fps,
-        "subscribers": stream.subscriber_count
+        "subscribers": stream.subscriber_count,
+        "motion_active": stream.motion_active,
     }
+
+    # Include full motion stats if available
+    motion_stats = stream.motion_stats
+    if motion_stats:
+        response["motion"] = motion_stats
+
+    return response
 
 
 @router.get("/mjpeg")
@@ -66,7 +74,7 @@ async def mjpeg_stream(request: Request):
 
 @router.websocket("/ws")
 async def websocket_stream(websocket: WebSocket, request: Request = None):
-    """WebSocket stream for React frontend."""
+    """WebSocket stream for React frontend with low latency."""
     await websocket.accept()
     stream = websocket.app.state.stream
 
@@ -77,13 +85,19 @@ async def websocket_stream(websocket: WebSocket, request: Request = None):
 
     try:
         while True:
-            frame_data = await asyncio.wait_for(queue.get(), timeout=10.0)
-            jpeg = stream.encode_jpeg(frame_data.frame, quality=75)
-            await websocket.send_bytes(jpeg)
+            try:
+                # Short timeout for responsiveness
+                frame_data = await asyncio.wait_for(queue.get(), timeout=2.0)
+                # Quality 60 is good balance of quality vs encoding speed
+                jpeg = stream.encode_jpeg(frame_data.frame, quality=60)
+                await websocket.send_bytes(jpeg)
+            except asyncio.TimeoutError:
+                # Continue waiting for frames
+                continue
 
     except WebSocketDisconnect:
         pass
-    except asyncio.TimeoutError:
-        await websocket.close(code=1000)
+    except Exception:
+        pass
     finally:
         stream.unsubscribe(queue)

@@ -214,3 +214,112 @@ class CameraService:
     def is_motion_active(self) -> bool:
         """Check cached motion status."""
         return self._motion_active
+
+    async def ptz_zoom(self, action: str = "stop", speed: int = 50) -> bool:
+        """
+        Control camera zoom via PTZ continuous.
+
+        Args:
+            action: "in", "out", or "stop"
+            speed: Zoom speed 1-100 (default 50)
+
+        Returns:
+            Success status
+        """
+        try:
+            client = await self._get_client()
+
+            # Map action to zoom value (-100 to 100)
+            # Positive = zoom in (tele), Negative = zoom out (wide)
+            if action == "in":
+                zoom_value = speed
+            elif action == "out":
+                zoom_value = -speed
+            else:
+                zoom_value = 0
+
+            # PTZ continuous command
+            xml_data = f"""<?xml version="1.0" encoding="UTF-8"?>
+<PTZData version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+    <pan>0</pan>
+    <tilt>0</tilt>
+    <zoom>{zoom_value}</zoom>
+</PTZData>"""
+
+            response = await client.put(
+                f"{self.base_url}/ISAPI/PTZCtrl/channels/1/continuous",
+                content=xml_data,
+                headers={"Content-Type": "application/xml"}
+            )
+
+            if response.status_code == 200:
+                logger.info(f"PTZ zoom {action} (value={zoom_value}) executed")
+                return True
+            else:
+                logger.warning(f"PTZ zoom failed: {response.status_code} - {response.text}")
+
+        except Exception as e:
+            logger.error(f"PTZ zoom error: {e}")
+
+        return False
+
+    async def ptz_zoom_absolute(self, zoom_level: int) -> bool:
+        """
+        Set absolute zoom level.
+
+        Args:
+            zoom_level: 0-100 (0=wide, 100=tele)
+
+        Returns:
+            Success status
+        """
+        try:
+            client = await self._get_client()
+
+            xml_data = f"""<?xml version="1.0" encoding="UTF-8"?>
+<PTZData>
+    <AbsoluteHigh>
+        <elevation>0</elevation>
+        <azimuth>0</azimuth>
+        <absoluteZoom>{zoom_level}</absoluteZoom>
+    </AbsoluteHigh>
+</PTZData>"""
+
+            response = await client.put(
+                f"{self.base_url}/ISAPI/PTZCtrl/channels/1/absolute",
+                content=xml_data,
+                headers={"Content-Type": "application/xml"}
+            )
+
+            if response.status_code == 200:
+                logger.info(f"PTZ zoom set to {zoom_level}")
+                return True
+
+        except Exception as e:
+            logger.error(f"PTZ absolute zoom error: {e}")
+
+        return False
+
+    async def get_ptz_status(self) -> Dict[str, Any]:
+        """Get current PTZ position including zoom."""
+        try:
+            client = await self._get_client()
+            response = await client.get(
+                f"{self.base_url}/ISAPI/PTZCtrl/channels/1/status"
+            )
+
+            if response.status_code == 200:
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(response.text)
+                ns = {'hik': 'http://www.hikvision.com/ver20/XMLSchema'}
+
+                return {
+                    'zoom': int(root.findtext('.//hik:absoluteZoom', '0', ns) or 0),
+                    'pan': int(root.findtext('.//hik:azimuth', '0', ns) or 0),
+                    'tilt': int(root.findtext('.//hik:elevation', '0', ns) or 0)
+                }
+
+        except Exception as e:
+            logger.error(f"PTZ status error: {e}")
+
+        return {'zoom': 0, 'pan': 0, 'tilt': 0}

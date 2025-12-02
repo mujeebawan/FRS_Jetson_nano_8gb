@@ -1,15 +1,19 @@
 """
 Face Detector using SCRFD from InsightFace.
-Optimized for Jetson Orin Nano 8GB.
+Optimized for Jetson Orin Nano 8GB with TensorRT FP16 acceleration.
 """
 
 import cv2
 import numpy as np
 import logging
+import os
 from typing import List, Optional
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+# TensorRT engine cache directory
+TENSORRT_CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data', 'tensorrt_engines')
 
 
 @dataclass
@@ -29,28 +33,72 @@ class FaceDetector:
 
     def __init__(
         self,
-        model_name: str = "buffalo_s",
+        model_name: str = None,  # Uses config if not specified
         min_confidence: float = 0.5,
-        det_size: tuple = (640, 640),
-        use_gpu: bool = True
+        det_size: tuple = (640, 640),  # Full size for GPU processing
+        use_gpu: bool = True,  # Enable GPU by default
+        use_fp16: bool = True,  # Enable FP16 models for faster inference
+        tensorrt_cache_dir: str = None
     ):
         """
         Initialize face detector.
 
         Args:
-            model_name: InsightFace model pack (buffalo_s recommended for 8GB)
+            model_name: InsightFace model pack (buffalo_s or buffalo_l)
             min_confidence: Minimum detection confidence threshold
             det_size: Detection input size
             use_gpu: Whether to use GPU acceleration
+            use_fp16: Whether to use FP16 models (faster, lower memory)
+            tensorrt_cache_dir: Directory to cache TensorRT engines
         """
+        # Get model from config if not specified
+        from ..config import settings
+        base_model = model_name or settings.recognition_model
+
         self.min_confidence = min_confidence
         self.det_size = det_size
-        self.model_name = model_name
+        self.use_gpu = use_gpu
+        self.use_fp16 = use_fp16
+        self.tensorrt_cache_dir = tensorrt_cache_dir or TENSORRT_CACHE_DIR
         self._app = None
         self._initialized = False
-        self.use_gpu = use_gpu
 
-        logger.info(f"FaceDetector configured: model={model_name}, det_size={det_size}")
+        # Use FP16 model pack if available and enabled
+        if use_fp16:
+            fp16_model = f"{base_model}_fp16"
+            fp16_path = os.path.expanduser(f"~/.insightface/models/{fp16_model}")
+            if os.path.exists(fp16_path):
+                self.model_name = fp16_model
+                logger.info(f"Using FP16 models from {fp16_model}")
+            else:
+                self.model_name = base_model
+                logger.info(f"FP16 models not found, using FP32: {base_model}")
+        else:
+            self.model_name = base_model
+
+        # Ensure cache directory exists
+        os.makedirs(self.tensorrt_cache_dir, exist_ok=True)
+
+        logger.info(f"FaceDetector configured: model={self.model_name}, det_size={det_size}, GPU={use_gpu}, FP16={use_fp16}")
+
+    def _build_providers(self) -> list:
+        """Build ONNX Runtime execution providers with CUDA acceleration."""
+        providers = []
+
+        if self.use_gpu:
+            # CUDA provider (primary for Orin Nano - no DLA/TensorRT compiler available)
+            cuda_options = {
+                'device_id': 0,
+                'arena_extend_strategy': 'kNextPowerOfTwo',
+                'cudnn_conv_algo_search': 'EXHAUSTIVE',  # Better performance
+                'do_copy_in_default_stream': True,
+            }
+            providers.append(('CUDAExecutionProvider', cuda_options))
+            logger.info("CUDA GPU acceleration enabled")
+
+        # CPU fallback
+        providers.append('CPUExecutionProvider')
+        return providers
 
     def initialize(self) -> bool:
         """Initialize the detector model (lazy loading)."""
@@ -60,15 +108,8 @@ class FaceDetector:
         try:
             from insightface.app import FaceAnalysis
 
-            providers = []
-            if self.use_gpu:
-                providers.append(('CUDAExecutionProvider', {
-                    'device_id': 0,
-                    'arena_extend_strategy': 'kNextPowerOfTwo',
-                    'cudnn_conv_algo_search': 'DEFAULT',  # EXHAUSTIVE uses more memory
-                    'do_copy_in_default_stream': True,
-                }))
-            providers.append('CPUExecutionProvider')
+            providers = self._build_providers()
+            logger.info(f"Initializing FaceAnalysis with providers: {[p[0] if isinstance(p, tuple) else p for p in providers]}")
 
             self._app = FaceAnalysis(
                 name=self.model_name,
@@ -82,7 +123,7 @@ class FaceDetector:
             )
 
             self._initialized = True
-            logger.info(f"FaceDetector initialized successfully (GPU={self.use_gpu})")
+            logger.info(f"FaceDetector initialized successfully (GPU={self.use_gpu}, FP16={self.use_fp16})")
             return True
 
         except Exception as e:

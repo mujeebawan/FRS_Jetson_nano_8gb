@@ -32,7 +32,8 @@ class FaceRecognizer:
         self,
         embeddings_dir: str = "data/embeddings",
         threshold: float = 0.4,
-        use_gpu: bool = False
+        use_gpu: bool = False,
+        model_name: str = None
     ):
         """
         Initialize recognizer.
@@ -41,11 +42,16 @@ class FaceRecognizer:
             embeddings_dir: Directory for storing embeddings
             threshold: Similarity threshold for matching (0-1)
             use_gpu: Use GPU for FAISS (requires faiss-gpu)
+            model_name: Model name for model-specific embeddings storage
         """
         self.embeddings_dir = Path(embeddings_dir)
         self.embeddings_dir.mkdir(parents=True, exist_ok=True)
         self.threshold = threshold
         self.use_gpu = use_gpu
+
+        # Track model for model-specific embeddings
+        # Normalize model name (remove _fp16 suffix for storage)
+        self._model_name = self._normalize_model_name(model_name) if model_name else "default"
 
         # Embedding storage
         self._embeddings: List[np.ndarray] = []
@@ -56,7 +62,48 @@ class FaceRecognizer:
         self._index = None
         self._faiss_initialized = False
 
-        logger.info(f"FaceRecognizer configured: threshold={threshold}, gpu={use_gpu}")
+        logger.info(f"FaceRecognizer configured: threshold={threshold}, gpu={use_gpu}, model={self._model_name}")
+
+    def _normalize_model_name(self, model_name: str) -> str:
+        """Normalize model name by removing _fp16 suffix."""
+        if model_name:
+            return model_name.replace("_fp16", "")
+        return "default"
+
+    def set_model(self, model_name: str) -> bool:
+        """
+        Switch to a different model's embeddings.
+        Saves current embeddings and loads the new model's embeddings.
+
+        Args:
+            model_name: New model name
+
+        Returns:
+            Success status
+        """
+        new_model = self._normalize_model_name(model_name)
+        if new_model == self._model_name:
+            return True  # Same model, no change needed
+
+        # Save current embeddings
+        self.save()
+
+        # Switch to new model
+        old_model = self._model_name
+        self._model_name = new_model
+
+        # Clear current embeddings
+        self._embeddings = []
+        self._person_ids = []
+        self._person_names = []
+        self._faiss_initialized = False
+        self._index = None
+
+        # Load new model's embeddings
+        self.load()
+
+        logger.info(f"Switched embeddings from {old_model} to {new_model} ({self.count} embeddings)")
+        return True
 
     def _init_faiss(self, dimension: int = 512) -> bool:
         """Initialize FAISS index."""
@@ -156,7 +203,7 @@ class FaceRecognizer:
 
     def _rebuild_index(self):
         """Rebuild FAISS index from current embeddings."""
-        if not self._embeddings:
+        if self._embeddings is None or len(self._embeddings) == 0:
             self._faiss_initialized = False
             self._index = None
             return
@@ -179,7 +226,7 @@ class FaceRecognizer:
         Returns:
             List of MatchResult objects
         """
-        if len(self._embeddings) == 0:
+        if self._embeddings is None or len(self._embeddings) == 0:
             return []
 
         # Normalize query
@@ -220,7 +267,7 @@ class FaceRecognizer:
 
     def _compute_similarities(self, query: np.ndarray) -> np.ndarray:
         """Compute cosine similarities using numpy."""
-        if len(self._embeddings) == 0:
+        if self._embeddings is None or len(self._embeddings) == 0:
             return np.array([])
 
         db_embeddings = np.array(self._embeddings)
@@ -242,14 +289,21 @@ class FaceRecognizer:
             return results[0]
         return None
 
-    def save(self, filename: str = "embeddings.pkl") -> bool:
-        """Save embeddings to file."""
+    def _get_embeddings_filename(self) -> str:
+        """Get model-specific embeddings filename."""
+        return f"embeddings_{self._model_name}.pkl"
+
+    def save(self, filename: str = None) -> bool:
+        """Save embeddings to model-specific file."""
         try:
+            if filename is None:
+                filename = self._get_embeddings_filename()
             filepath = self.embeddings_dir / filename
             data = {
                 'embeddings': self._embeddings,
                 'person_ids': self._person_ids,
-                'person_names': self._person_names
+                'person_names': self._person_names,
+                'model': self._model_name
             }
             with open(filepath, 'wb') as f:
                 pickle.dump(data, f)
@@ -261,13 +315,24 @@ class FaceRecognizer:
             logger.error(f"Failed to save embeddings: {e}")
             return False
 
-    def load(self, filename: str = "embeddings.pkl") -> bool:
-        """Load embeddings from file."""
+    def load(self, filename: str = None) -> bool:
+        """Load embeddings from model-specific file."""
         try:
+            if filename is None:
+                filename = self._get_embeddings_filename()
             filepath = self.embeddings_dir / filename
+
+            # Also try legacy filename for migration
+            legacy_filepath = self.embeddings_dir / "embeddings.pkl"
+
             if not filepath.exists():
-                logger.info("No saved embeddings found")
-                return True
+                # Check for legacy file and migrate if current model is buffalo_s
+                if legacy_filepath.exists() and self._model_name == "buffalo_s":
+                    logger.info(f"Migrating legacy embeddings to {filename}")
+                    filepath = legacy_filepath
+                else:
+                    logger.info(f"No saved embeddings found for model {self._model_name}")
+                    return True
 
             with open(filepath, 'rb') as f:
                 data = pickle.load(f)
@@ -276,13 +341,27 @@ class FaceRecognizer:
             self._person_ids = data.get('person_ids', [])
             self._person_names = data.get('person_names', [])
 
+            # Handle None embeddings (convert to empty list)
+            if self._embeddings is None:
+                self._embeddings = []
+            if self._person_ids is None:
+                self._person_ids = []
+            if self._person_names is None:
+                self._person_names = []
+
             # Rebuild FAISS index
             self._init_faiss()
-            if self._embeddings and self._index is not None:
+            if len(self._embeddings) > 0 and self._index is not None:
                 embeddings_array = np.array(self._embeddings, dtype=np.float32)
                 self._index.add(embeddings_array)
 
-            logger.info(f"Loaded {len(self._embeddings)} embeddings from {filepath}")
+            logger.info(f"Loaded {len(self._embeddings)} embeddings for model {self._model_name}")
+
+            # If we loaded from legacy file, save to new model-specific file
+            if filepath == legacy_filepath and self._model_name == "buffalo_s":
+                self.save()
+                logger.info(f"Migrated legacy embeddings to {self._get_embeddings_filename()}")
+
             return True
 
         except Exception as e:
@@ -292,9 +371,13 @@ class FaceRecognizer:
     @property
     def count(self) -> int:
         """Number of embeddings in database."""
+        if self._embeddings is None:
+            return 0
         return len(self._embeddings)
 
     @property
     def person_count(self) -> int:
         """Number of unique persons."""
+        if self._person_ids is None:
+            return 0
         return len(set(self._person_ids))

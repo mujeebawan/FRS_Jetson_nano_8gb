@@ -1,6 +1,12 @@
 """
 Stream Manager for handling video streams with multi-client broadcast.
 Optimized for Jetson Orin Nano 8GB.
+
+Features:
+- GStreamer hardware-accelerated decoding (nvv4l2decoder)
+- Motion-triggered face detection (via Hikvision ISAPI VMD)
+- Multi-client WebSocket broadcasting
+- Minimal latency pipeline
 """
 
 import cv2
@@ -8,12 +14,16 @@ import numpy as np
 import logging
 import asyncio
 import threading
-from typing import Optional, Callable, List, Set
+from typing import Optional, Callable, List, Set, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .processor import FrameProcessor
 from dataclasses import dataclass
 from queue import Queue
 import time
 
 from ..config import settings
+from .motion_processor import MotionTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +41,19 @@ class StreamManager:
     """
     Manages video stream capture and multi-client broadcasting.
     Single capture thread serves multiple WebSocket/HTTP clients.
+
+    Features:
+    - Hardware-accelerated H264 decoding via GStreamer/nvv4l2decoder
+    - Motion-triggered face detection (only process when camera detects movement)
+    - Multi-client WebSocket broadcasting with minimal latency
     """
 
     def __init__(
         self,
         rtsp_url: str = None,
         frame_skip: int = 2,
-        max_clients: int = 10
+        max_clients: int = 10,
+        enable_motion_trigger: bool = None
     ):
         """
         Initialize stream manager.
@@ -46,10 +62,21 @@ class StreamManager:
             rtsp_url: RTSP stream URL
             frame_skip: Process every Nth frame
             max_clients: Maximum concurrent viewers
+            enable_motion_trigger: Enable motion-based processing (default from settings)
         """
         self.rtsp_url = rtsp_url or self._get_default_stream()
         self.frame_skip = frame_skip
         self.max_clients = max_clients
+
+        # Motion trigger (uses camera's built-in VMD via ISAPI)
+        self._enable_motion_trigger = enable_motion_trigger if enable_motion_trigger is not None else settings.enable_motion_trigger
+        self._motion_trigger: Optional[MotionTrigger] = None
+
+        if self._enable_motion_trigger:
+            self._motion_trigger = MotionTrigger(
+                motion_timeout_seconds=3.0,  # Continue processing 3s after motion stops
+                polling_interval=0.3  # Poll motion status every 300ms
+            )
 
         # Stream state
         self._capture: Optional[cv2.VideoCapture] = None
@@ -62,15 +89,19 @@ class StreamManager:
         self._frame_number = 0
         self._subscribers: Set[asyncio.Queue] = set()
 
-        # Processing callback
-        self._processor: Optional[Callable] = None
+        # Processing callback - can be function or FrameProcessor object
+        self._processor: Optional[Any] = None
+        self._processor_obj: Optional["FrameProcessor"] = None
 
         # Stats
         self._fps = 0.0
         self._last_fps_time = time.time()
         self._fps_frame_count = 0
+        self._processed_frames = 0
+        self._skipped_frames = 0
 
         logger.info(f"StreamManager initialized: url={self.rtsp_url[:50]}...")
+        logger.info(f"Motion trigger: {'enabled' if self._enable_motion_trigger else 'disabled'}")
 
     def _get_default_stream(self) -> str:
         """Get default stream URL based on settings."""
@@ -83,7 +114,7 @@ class StreamManager:
             return settings.camera_third_stream
 
     def start(self) -> bool:
-        """Start stream capture thread."""
+        """Start stream capture thread and motion trigger."""
         if self._running:
             return True
 
@@ -102,6 +133,11 @@ class StreamManager:
                 logger.error("Failed to open video stream")
                 return False
 
+            # Start motion trigger if enabled
+            if self._motion_trigger:
+                self._motion_trigger.start()
+                logger.info("Motion trigger started")
+
             self._running = True
             self._thread = threading.Thread(target=self._capture_loop, daemon=True)
             self._thread.start()
@@ -114,17 +150,21 @@ class StreamManager:
             return False
 
     def _build_gstreamer_pipeline(self) -> str:
-        """Build GStreamer pipeline for hardware-accelerated decoding."""
-        # Parse RTSP URL components
+        """Build GStreamer pipeline for hardware-accelerated decoding with minimal latency."""
+        # Ultra-low latency pipeline for real-time streaming
+        # - latency=0: Minimum RTSP buffering
+        # - drop-on-latency=true: Drop frames if behind
+        # - nvv4l2decoder: Hardware H264 decoding
+        # - appsink: sync=false (no clock sync), max-buffers=1 (only latest frame), drop=true
         return (
-            f"rtspsrc location={self.rtsp_url} latency=100 ! "
+            f"rtspsrc location={self.rtsp_url} latency=0 drop-on-latency=true ! "
             "rtph264depay ! h264parse ! "
-            "nvv4l2decoder ! "
+            "nvv4l2decoder enable-max-performance=true ! "
             "nvvidconv ! "
             "video/x-raw,format=BGRx ! "
             "videoconvert ! "
             "video/x-raw,format=BGR ! "
-            "appsink drop=1"
+            "appsink sync=false max-buffers=1 drop=true"
         )
 
     def _capture_loop(self):
@@ -144,21 +184,42 @@ class StreamManager:
                 self._frame_number += 1
                 process_counter += 1
 
-                # Create frame data
+                # Check if motion is detected (if trigger enabled)
+                has_motion = True  # Default: always process
+                if self._motion_trigger:
+                    has_motion = self._motion_trigger.should_process()
+
+                # Create frame data - no copy needed, we'll copy only when drawing
                 frame_data = FrameData(
                     frame=frame,
                     timestamp=time.time(),
-                    frame_number=self._frame_number
+                    frame_number=self._frame_number,
+                    has_motion=has_motion
                 )
 
-                # Process frame only every N frames (for face detection)
-                # But still broadcast ALL frames for smooth display
-                if self._processor and process_counter >= self.frame_skip:
+                # Process frame only every N frames AND when motion detected
+                should_process = (
+                    self._processor_obj and
+                    process_counter >= self.frame_skip and
+                    has_motion
+                )
+
+                if should_process:
                     process_counter = 0
+                    self._processed_frames += 1
                     try:
-                        frame_data = self._processor(frame_data)
+                        # Full detection + recognition
+                        frame_data = self._processor_obj.process(frame_data, detect=True)
                     except Exception as e:
                         logger.error(f"Frame processor error: {e}")
+                elif self._processor_obj:
+                    # Just draw cached overlays (very fast - no detection)
+                    if not has_motion:
+                        self._skipped_frames += 1
+                    try:
+                        frame_data = self._processor_obj.draw_overlay(frame_data)
+                    except Exception as e:
+                        pass  # Ignore errors for overlay-only frames
 
                 # Update latest frame
                 with self._lock:
@@ -172,7 +233,7 @@ class StreamManager:
 
             except Exception as e:
                 logger.error(f"Capture loop error: {e}")
-                time.sleep(0.05)
+                time.sleep(0.01)
 
     def _reconnect(self):
         """Attempt to reconnect to stream."""
@@ -189,14 +250,17 @@ class StreamManager:
             logger.error(f"Reconnection failed: {e}")
 
     def _broadcast(self, frame_data: FrameData):
-        """Broadcast frame to all subscribers."""
+        """Broadcast frame to all subscribers with minimal latency."""
         dead_subscribers = set()
 
         for queue in self._subscribers:
             try:
-                # Non-blocking put, drop if queue is full
-                if queue.qsize() < 2:
-                    queue.put_nowait(frame_data)
+                # Clear old frame and put new one - always show latest
+                try:
+                    queue.get_nowait()  # Remove old frame if exists
+                except:
+                    pass
+                queue.put_nowait(frame_data)  # Put latest frame
             except:
                 dead_subscribers.add(queue)
 
@@ -215,8 +279,12 @@ class StreamManager:
             self._last_fps_time = current_time
 
     def stop(self):
-        """Stop stream capture."""
+        """Stop stream capture and motion trigger."""
         self._running = False
+
+        # Stop motion trigger
+        if self._motion_trigger:
+            self._motion_trigger.stop()
 
         if self._thread:
             self._thread.join(timeout=2.0)
@@ -226,7 +294,7 @@ class StreamManager:
             self._capture.release()
             self._capture = None
 
-        logger.info("Stream capture stopped")
+        logger.info(f"Stream capture stopped. Processed: {self._processed_frames}, Skipped: {self._skipped_frames}")
 
     def subscribe(self) -> asyncio.Queue:
         """
@@ -238,7 +306,8 @@ class StreamManager:
         if len(self._subscribers) >= self.max_clients:
             raise RuntimeError(f"Maximum clients ({self.max_clients}) reached")
 
-        queue = asyncio.Queue(maxsize=2)
+        # maxsize=1: Only keep latest frame, discard old ones for low latency
+        queue = asyncio.Queue(maxsize=1)
         self._subscribers.add(queue)
         logger.debug(f"New subscriber, total: {len(self._subscribers)}")
         return queue
@@ -248,14 +317,21 @@ class StreamManager:
         self._subscribers.discard(queue)
         logger.debug(f"Subscriber removed, total: {len(self._subscribers)}")
 
-    def set_processor(self, processor: Callable):
+    def set_processor(self, processor: Any):
         """
-        Set frame processor function.
+        Set frame processor - can be function or FrameProcessor object.
 
         Args:
-            processor: Function that takes FrameData and returns processed FrameData
+            processor: FrameProcessor object or function that takes FrameData
         """
-        self._processor = processor
+        # Check if it's a FrameProcessor object (has draw_overlay method)
+        if hasattr(processor, 'draw_overlay') and hasattr(processor, 'process'):
+            self._processor_obj = processor
+            self._processor = None
+        else:
+            # Legacy function-based processor
+            self._processor = processor
+            self._processor_obj = None
 
     def get_latest_frame(self) -> Optional[FrameData]:
         """Get the most recent frame."""
@@ -282,3 +358,39 @@ class StreamManager:
     def is_running(self) -> bool:
         """Check if stream is running."""
         return self._running
+
+    @property
+    def motion_active(self) -> bool:
+        """Check if motion is currently detected."""
+        if self._motion_trigger:
+            return self._motion_trigger.is_motion_active
+        return True  # Always "active" if motion trigger disabled
+
+    @property
+    def motion_stats(self) -> dict:
+        """Get motion detection statistics."""
+        if self._motion_trigger:
+            return self._motion_trigger.get_stats()
+        return {
+            "enabled": False,
+            "is_active": True,
+            "total_events": 0,
+            "frames_saved": 0
+        }
+
+    def get_stats(self) -> dict:
+        """Get comprehensive stream statistics."""
+        stats = {
+            "fps": self._fps,
+            "frame_number": self._frame_number,
+            "subscribers": len(self._subscribers),
+            "processed_frames": self._processed_frames,
+            "skipped_frames": self._skipped_frames,
+            "is_running": self._running
+        }
+
+        # Add motion stats
+        if self._motion_trigger:
+            stats["motion"] = self._motion_trigger.get_stats()
+
+        return stats

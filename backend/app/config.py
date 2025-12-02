@@ -45,12 +45,12 @@ class Settings(BaseSettings):
     recognition_threshold: float = 0.4
 
     # Processing Settings
-    process_stream: str = "third"  # main, sub, or third
-    frame_skip: int = 2  # Process every Nth frame
+    process_stream: str = "sub"  # main, sub, or third (sub=channel 102 for better quality)
+    frame_skip: int = 2  # Process every Nth frame (2 = more frequent detection with GPU+FP16)
     max_faces: int = 5  # Max faces to process per frame
 
-    # Motion-based processing
-    enable_motion_trigger: bool = True
+    # Motion-based processing (disabled by default - camera VMD not configured)
+    enable_motion_trigger: bool = False
     motion_sensitivity: float = 0.3
 
     # Security
@@ -65,16 +65,21 @@ class Settings(BaseSettings):
     snapshots_dir: str = "data/snapshots"
 
     # Alert Settings
-    alert_cooldown_seconds: int = 60
-    alert_on_unknown: bool = True
+    alert_cooldown_seconds: int = 10  # Reduced from 60s for faster testing
+    alert_on_unknown: bool = False  # Only alert on known watchlist persons
     alert_on_known: bool = True
     alert_save_snapshot: bool = True
 
+    # Reference images directory (enrolled person photos)
+    reference_images_dir: str = "data/images"
+
     # Model Configuration (optimized for Jetson Orin Nano 8GB)
-    # Using SCRFD_2.5G for detection and MobileFaceNet for recognition
-    detection_model: str = "scrfd_2.5g_kps"
-    recognition_model: str = "buffalo_s"  # Smaller than buffalo_l
-    use_tensorrt: bool = False  # Enable after TensorRT installation
+    # Model packs: buffalo_s (smaller/faster) or buffalo_l (larger/more accurate)
+    # Detection uses SCRFD from the model pack
+    # Recognition uses ArcFace from the model pack
+    recognition_model: str = "buffalo_s"  # buffalo_s (88MB FP16) or buffalo_l (171MB FP16)
+    use_fp16: bool = True  # FP16 models for faster GPU inference
+    use_gpu: bool = True  # GPU enabled by default
 
     # FAISS Settings
     faiss_use_gpu: bool = False  # Start with CPU, upgrade later
