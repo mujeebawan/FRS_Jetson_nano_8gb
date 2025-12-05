@@ -3,7 +3,7 @@ import { alertsApi, getPersonImageUrl } from '../services/api';
 import {
   Bell, Check, Trash2, AlertCircle, User, Shield, AlertTriangle,
   CheckCircle, XCircle, Phone, Volume2, DoorClosed, X, Siren,
-  Search, Download, Calendar, Filter, RefreshCw
+  Search, Download, Calendar, Filter, RefreshCw, Play, Video
 } from 'lucide-react';
 
 interface Alert {
@@ -45,6 +45,10 @@ export function AlertList({ fullPage = false }: AlertListProps) {
   // Alert queue for handling multiple detections one by one
   const [alertQueue, setAlertQueue] = useState<Alert[]>([]);
   const alertQueueRef = React.useRef<Alert[]>([]);
+
+  // Video playback state
+  const [showVideo, setShowVideo] = useState(false);
+  const [videoExists, setVideoExists] = useState<boolean | null>(null);
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -251,10 +255,18 @@ export function AlertList({ fullPage = false }: AlertListProps) {
 
   const openAlertModal = (alert: Alert) => {
     setModalAlert(alert);
+    setShowVideo(false);
+    setVideoExists(null);
+    // Check if video exists for this alert
+    alertsApi.checkVideoExists(alert.id).then(res => {
+      setVideoExists(res.data.exists);
+    }).catch(() => setVideoExists(false));
   };
 
   const closeModal = () => {
     setModalAlert(null);
+    setShowVideo(false);
+    setVideoExists(null);
   };
 
   const handleDelete = async (alertId: number) => {
@@ -365,6 +377,37 @@ export function AlertList({ fullPage = false }: AlertListProps) {
                 </div>
               </div>
             </div>
+
+            {/* Video Clip Section */}
+            {videoExists && (
+              <div className="modal-video-section">
+                {!showVideo ? (
+                  <button className="play-video-btn" onClick={() => setShowVideo(true)}>
+                    <Play size={20} />
+                    <span>Play Video Clip</span>
+                    <small>View footage from before & after alert</small>
+                  </button>
+                ) : (
+                  <div className="video-player-container">
+                    <div className="video-header">
+                      <Video size={18} />
+                      <span>Alert Video Clip</span>
+                      <button className="close-video-btn" onClick={() => setShowVideo(false)}>
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <video
+                      controls
+                      autoPlay
+                      className="alert-video-player"
+                      src={alertsApi.getVideoUrl(modalAlert.id)}
+                    >
+                      Your browser does not support video playback.
+                    </video>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Guard Decision Buttons */}
             <div className="modal-actions">

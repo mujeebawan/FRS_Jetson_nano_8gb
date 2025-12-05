@@ -17,6 +17,8 @@ class SettingsUpdate(BaseModel):
     frame_skip: Optional[int] = None
     enable_motion_trigger: Optional[bool] = None
     alert_cooldown_seconds: Optional[int] = None
+    video_recording_enabled: Optional[bool] = None
+    video_clip_duration: Optional[int] = None  # 3-10 seconds
 
 
 # Available model packs for the UI
@@ -169,7 +171,9 @@ async def update_settings(
     recognition_threshold: float = None,
     frame_skip: int = None,
     enable_motion_trigger: bool = None,
-    alert_cooldown_seconds: int = None
+    alert_cooldown_seconds: int = None,
+    video_recording_enabled: bool = None,
+    video_clip_duration: int = None
 ):
     """
     Update runtime settings.
@@ -190,6 +194,8 @@ async def update_settings(
         frame_skip = settings_update.frame_skip or frame_skip
         enable_motion_trigger = settings_update.enable_motion_trigger if settings_update.enable_motion_trigger is not None else enable_motion_trigger
         alert_cooldown_seconds = settings_update.alert_cooldown_seconds or alert_cooldown_seconds
+        video_recording_enabled = settings_update.video_recording_enabled if settings_update.video_recording_enabled is not None else video_recording_enabled
+        video_clip_duration = settings_update.video_clip_duration or video_clip_duration
 
     updated = {}
     persisted = {}
@@ -248,6 +254,46 @@ async def update_settings(
         else:
             errors.append("alert_cooldown_seconds must be between 1 and 300")
 
+    # Update video recording enabled
+    if video_recording_enabled is not None:
+        video_recorder = request.app.state.video_recorder
+        if video_recording_enabled:
+            # Enable recording - create recorder if needed
+            if video_recorder is None:
+                from ...services.video_recorder import VideoRecorder
+                clip_duration = video_clip_duration or settings.video_clip_duration
+                request.app.state.video_recorder = VideoRecorder(
+                    pre_alert_seconds=float(clip_duration),
+                    post_alert_seconds=float(clip_duration),
+                    fps=15,
+                    clips_dir=settings.clips_dir
+                )
+                stream.set_video_recorder(request.app.state.video_recorder)
+        else:
+            # Disable recording - disconnect recorder
+            if video_recorder:
+                stream._video_recorder = None
+                request.app.state.video_recorder = None
+        updated["video_recording_enabled"] = video_recording_enabled
+        persisted["video_recording_enabled"] = video_recording_enabled
+
+    # Update video clip duration
+    if video_clip_duration is not None:
+        if 3 <= video_clip_duration <= 10:
+            video_recorder = request.app.state.video_recorder
+            if video_recorder:
+                video_recorder.pre_alert_seconds = float(video_clip_duration)
+                video_recorder.post_alert_seconds = float(video_clip_duration)
+                # Update buffer size
+                video_recorder._buffer = __import__('collections').deque(
+                    video_recorder._buffer,
+                    maxlen=int(video_clip_duration * video_recorder.fps)
+                )
+            updated["video_clip_duration"] = video_clip_duration
+            persisted["video_clip_duration"] = video_clip_duration
+        else:
+            errors.append("video_clip_duration must be between 3 and 10 seconds")
+
     # Persist settings to file
     if persisted:
         settings_store.update(persisted)
@@ -278,6 +324,7 @@ async def get_current_settings(request: Request):
     recognizer = request.app.state.recognizer
     stream = request.app.state.stream
     alert_manager = request.app.state.alert_manager
+    video_recorder = request.app.state.video_recorder
 
     return {
         "detection_confidence": detector.min_confidence if hasattr(detector, 'min_confidence') else settings.detection_confidence,
@@ -286,11 +333,14 @@ async def get_current_settings(request: Request):
         "enable_motion_trigger": stream._enable_motion_trigger if hasattr(stream, '_enable_motion_trigger') else settings.enable_motion_trigger,
         "alert_cooldown_seconds": alert_manager._cooldown_seconds if hasattr(alert_manager, '_cooldown_seconds') else settings.alert_cooldown_seconds,
         "recognition_model": settings.recognition_model,
+        "video_recording_enabled": video_recorder is not None,
+        "video_clip_duration": int(video_recorder.pre_alert_seconds) if video_recorder else settings.video_clip_duration,
         "ranges": {
             "detection_confidence": {"min": 0.1, "max": 1.0, "step": 0.05, "default": 0.5},
             "recognition_threshold": {"min": 0.1, "max": 1.0, "step": 0.05, "default": 0.4},
             "frame_skip": {"min": 1, "max": 10, "step": 1, "default": 2},
-            "alert_cooldown_seconds": {"min": 1, "max": 300, "step": 1, "default": 10}
+            "alert_cooldown_seconds": {"min": 1, "max": 300, "step": 1, "default": 10},
+            "video_clip_duration": {"min": 3, "max": 10, "step": 1, "default": 5}
         }
     }
 

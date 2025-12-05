@@ -428,3 +428,51 @@ async def get_alert_snapshot(alert_id: int, db: Session = Depends(get_db)):
             "Expires": "0"
         }
     )
+
+
+@router.get("/{alert_id}/video")
+async def get_alert_video(request: Request, alert_id: int, db: Session = Depends(get_db)):
+    """
+    Get the video clip for an alert (if recording was enabled).
+
+    Returns MP4 video file with footage from before and after the alert.
+    """
+    from fastapi.responses import FileResponse
+
+    # Check if alert exists
+    alert = db.query(AlertModel).filter(AlertModel.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Get video recorder
+    video_recorder = request.app.state.video_recorder
+    if not video_recorder:
+        raise HTTPException(status_code=404, detail="Video recording is disabled")
+
+    # Find the clip file
+    clip_path = video_recorder.get_clip_path(alert_id)
+    if not clip_path or not clip_path.exists():
+        raise HTTPException(status_code=404, detail="Video clip not found for this alert")
+
+    return FileResponse(
+        path=str(clip_path),
+        media_type="video/mp4",
+        filename=f"alert_{alert_id}.mp4"
+    )
+
+
+@router.get("/{alert_id}/video/exists")
+async def check_alert_video(request: Request, alert_id: int):
+    """Check if a video clip exists for an alert."""
+    video_recorder = request.app.state.video_recorder
+    if not video_recorder:
+        return {"exists": False, "reason": "recording_disabled"}
+
+    clip_path = video_recorder.get_clip_path(alert_id)
+    if clip_path and clip_path.exists():
+        return {
+            "exists": True,
+            "path": str(clip_path),
+            "size_mb": round(clip_path.stat().st_size / (1024 * 1024), 2)
+        }
+    return {"exists": False, "reason": "not_found"}

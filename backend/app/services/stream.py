@@ -95,6 +95,9 @@ class StreamManager:
         self._processor: Optional[Any] = None
         self._processor_obj: Optional["FrameProcessor"] = None
 
+        # Video recorder reference (set externally)
+        self._video_recorder: Optional[Any] = None
+
         # Async processing - separate thread for detection (never blocks stream)
         self._process_thread: Optional[threading.Thread] = None
         self._process_queue: Queue = Queue(maxsize=2)  # Only keep latest frames
@@ -252,6 +255,13 @@ class StreamManager:
                         frame_number=frame_data.frame_number,
                         has_motion=has_motion
                     )
+
+                # Feed frame to video recorder buffer (for alert clips)
+                if self._video_recorder and self._frame_number % 2 == 0:  # Every other frame = ~15fps
+                    try:
+                        self._video_recorder.add_frame(frame)
+                    except Exception:
+                        pass  # Ignore recorder errors
 
                 # Draw cached overlays (very fast, ~1ms)
                 if self._processor_obj:
@@ -415,6 +425,16 @@ class StreamManager:
             self._processor = processor
             self._processor_obj = None
             logger.info(f"Legacy processor function connected")
+
+    def set_video_recorder(self, recorder: Any):
+        """
+        Set video recorder for alert clips.
+
+        Args:
+            recorder: VideoRecorder instance
+        """
+        self._video_recorder = recorder
+        logger.info("VideoRecorder connected to stream")
 
     def get_latest_frame(self) -> Optional[FrameData]:
         """Get the most recent frame (with overlays for display)."""

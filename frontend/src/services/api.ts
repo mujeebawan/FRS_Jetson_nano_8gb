@@ -75,6 +75,10 @@ export const alertsApi = {
   getWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/alerts/ws`,
   getSnapshotUrl: (alertId: number, timestamp?: number) =>
     `${API_BASE_URL}/alerts/${alertId}/snapshot?t=${timestamp || Date.now()}`,
+  getVideoUrl: (alertId: number) =>
+    `${API_BASE_URL}/alerts/${alertId}/video`,
+  checkVideoExists: (alertId: number) =>
+    api.get(`/alerts/${alertId}/video/exists`),
   exportCsv: (params?: { time_range?: string; search?: string; threat_level?: string }) => {
     const queryString = new URLSearchParams(
       Object.entries(params || {}).filter(([_, v]) => v !== undefined) as [string, string][]
@@ -101,6 +105,8 @@ export const systemApi = {
     frame_skip?: number;
     enable_motion_trigger?: boolean;
     alert_cooldown_seconds?: number;
+    video_recording_enabled?: boolean;
+    video_clip_duration?: number;
   }) => api.post('/system/settings/update', null, { params: settings }),
   // Available models
   getModels: () => api.get('/system/models'),

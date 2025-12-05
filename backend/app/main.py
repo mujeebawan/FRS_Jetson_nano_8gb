@@ -63,6 +63,21 @@ async def lifespan(app: FastAPI):
     app.state.alert_manager = AlertManager()
     logger.info(f"AlertManager initialized (cooldown={settings.alert_cooldown_seconds}s)")
 
+    # Initialize video recorder for alert clips (if enabled)
+    from .services.video_recorder import VideoRecorder
+    if settings.video_recording_enabled:
+        clip_duration = settings.video_clip_duration
+        app.state.video_recorder = VideoRecorder(
+            pre_alert_seconds=float(clip_duration),
+            post_alert_seconds=float(clip_duration),
+            fps=15,  # 15 FPS for clips (saves space)
+            clips_dir=settings.clips_dir
+        )
+        logger.info(f"VideoRecorder initialized ({clip_duration}s pre + {clip_duration}s post @ 15fps)")
+    else:
+        app.state.video_recorder = None
+        logger.info("VideoRecorder disabled")
+
     # Create alert callback for face detection
     def alert_callback(detection, frame_data):
         """Callback when face is detected - creates alert with cooldown."""
@@ -102,6 +117,16 @@ async def lifespan(app: FastAPI):
                     logger.info(f"Alert created and broadcasting: {alert.id} - {alert.person_name}")
                     broadcast_alert_sync(alert)
 
+                    # Trigger video clip recording for the alert (if enabled)
+                    if app.state.video_recorder:
+                        try:
+                            app.state.video_recorder.trigger_recording(
+                                alert_id=alert.id,
+                                bbox=detection.bbox if detection else None
+                            )
+                        except Exception as ve:
+                            logger.error(f"Video recording trigger failed: {ve}")
+
             finally:
                 db.close()
         except Exception as e:
@@ -116,6 +141,9 @@ async def lifespan(app: FastAPI):
     )
     app.state.stream.set_processor(app.state.processor)
     logger.info("Frame processor connected to stream with alert callback")
+
+    # Connect video recorder to stream
+    app.state.stream.set_video_recorder(app.state.video_recorder)
 
     # Get camera info
     info = await app.state.camera.get_device_info()

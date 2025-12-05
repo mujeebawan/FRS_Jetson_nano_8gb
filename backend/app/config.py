@@ -110,6 +110,14 @@ class Settings(BaseSettings):
     alert_on_known: bool = _persisted.get("alert_on_known", True)
     alert_save_snapshot: bool = True
 
+    # Video Recording Settings (with persistent defaults)
+    video_recording_enabled: bool = _persisted.get("video_recording_enabled", True)
+    video_clip_duration: int = _persisted.get("video_clip_duration", 5)  # seconds before+after (3-10)
+
+    @property
+    def clips_dir(self) -> str:
+        return str(self._project_root / "data" / "clips")
+
     # Reference images directory (enrolled person photos)
     @property
     def reference_images_dir(self) -> str:
