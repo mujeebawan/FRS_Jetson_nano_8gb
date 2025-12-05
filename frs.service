@@ -1,30 +1,22 @@
 [Unit]
 Description=Face Recognition Security System
-After=network-online.target NetworkManager.service
+After=network.target NetworkManager.service
 Wants=network-online.target
-# Wait for ethernet to be fully configured
-After=NetworkManager-wait-online.service
 
 [Service]
-Type=forking
+Type=simple
 User=tempuser
+Group=Mujeeb
 WorkingDirectory=/home/tempuser/Downloads/frs
-# Start delay to ensure network is stable
-ExecStartPre=/bin/sleep 5
-ExecStart=/home/tempuser/Downloads/frs/start.sh
-ExecStop=/home/tempuser/Downloads/frs/stop.sh
-Restart=on-failure
-RestartSec=10
-# Extended environment
-Environment=PATH=/home/tempuser/.local/bin:/usr/local/bin:/usr/bin:/bin
-Environment=HOME=/home/tempuser
-Environment=PYTHONPATH=/home/tempuser/Downloads/frs
-# Correct PID file location
-PIDFile=/tmp/frs.pid
-# Give time for AI models to load
-TimeoutStartSec=120
-# Ensure GPU access
-SupplementaryGroups=video
+Environment="PATH=/home/tempuser/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/home/tempuser/Downloads/frs"
+ExecStart=/usr/bin/python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=append:/var/log/frs/backend.log
+StandardError=append:/var/log/frs/backend.log
 
 [Install]
 WantedBy=multi-user.target

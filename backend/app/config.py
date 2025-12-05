@@ -17,7 +17,9 @@ from pathlib import Path
 
 def _load_persisted_settings() -> dict:
     """Load persisted settings from JSON file."""
-    settings_file = Path("data/settings.json")
+    # Use absolute path relative to project root (parent of backend dir)
+    project_root = Path(__file__).parent.parent.parent
+    settings_file = project_root / "data" / "settings.json"
     if settings_file.exists():
         try:
             with open(settings_file, "r") as f:
@@ -81,11 +83,26 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
-    # Data Paths
-    models_dir: str = "data/models"
-    images_dir: str = "data/images"
-    embeddings_dir: str = "data/embeddings"
-    snapshots_dir: str = "data/snapshots"
+    # Data Paths (absolute, relative to project root)
+    @property
+    def _project_root(self) -> Path:
+        return Path(__file__).parent.parent.parent
+
+    @property
+    def models_dir(self) -> str:
+        return str(self._project_root / "data" / "models")
+
+    @property
+    def images_dir(self) -> str:
+        return str(self._project_root / "data" / "images")
+
+    @property
+    def embeddings_dir(self) -> str:
+        return str(self._project_root / "data" / "embeddings")
+
+    @property
+    def snapshots_dir(self) -> str:
+        return str(self._project_root / "data" / "snapshots")
 
     # Alert Settings (with persistent defaults)
     alert_cooldown_seconds: int = _persisted.get("alert_cooldown_seconds", 10)
@@ -94,7 +111,9 @@ class Settings(BaseSettings):
     alert_save_snapshot: bool = True
 
     # Reference images directory (enrolled person photos)
-    reference_images_dir: str = "data/images"
+    @property
+    def reference_images_dir(self) -> str:
+        return str(self._project_root / "data" / "images")
 
     # Model Configuration (with persistent defaults)
     recognition_model: str = _persisted.get("recognition_model", "buffalo_s")

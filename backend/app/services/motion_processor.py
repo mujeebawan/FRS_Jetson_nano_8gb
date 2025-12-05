@@ -1,21 +1,26 @@
 """
 Motion-Triggered Face Detection Processor.
 
-Uses Hikvision camera's built-in Video Motion Detection (VMD) via ISAPI
-to optimize processing - only run face detection when motion is detected.
+Uses SOFTWARE-BASED frame differencing for motion detection.
+This works with ANY camera (Hikvision, Dahua, generic RTSP, etc.)
+and is more reliable than camera-specific APIs.
 
-This significantly reduces GPU usage and allows for higher quality models.
+Benefits:
+- GPU idle when no motion (saves power, reduces heat)
+- Can use larger/more accurate models due to reduced average load
+- Works with ANY camera - no vendor-specific API needed
+- Better for continuous 24/7 operation
 """
 
+import cv2
+import numpy as np
 import logging
-import asyncio
 import threading
 from typing import Optional, Callable, Any
-from datetime import datetime, timedelta
+from datetime import datetime
 from dataclasses import dataclass
 
 from ..config import settings
-from .camera import CameraService, MotionEvent
 
 logger = logging.getLogger(__name__)
 
@@ -26,50 +31,59 @@ class MotionState:
     is_active: bool = False
     last_motion_time: Optional[datetime] = None
     motion_count: int = 0
-    last_poll_time: Optional[datetime] = None
+    motion_score: float = 0.0
 
 
 class MotionTrigger:
     """
-    Integrates with Hikvision camera's VMD to trigger face detection only when needed.
+    Software-based motion detection using frame differencing.
 
-    Two modes:
-    1. Polling mode: Periodically check motion status (reliable, ~100ms latency)
-    2. Event stream mode: Subscribe to alertStream (real-time, but may disconnect)
+    Works with ANY camera by analyzing actual pixel changes.
+    Much more reliable than camera-specific APIs.
 
-    Benefits:
-    - GPU idle when no motion (saves power, reduces heat)
-    - Can use larger/more accurate models due to reduced average load
-    - Better for continuous 24/7 operation
+    Algorithm:
+    1. Convert frames to grayscale
+    2. Apply Gaussian blur to reduce noise
+    3. Compute absolute difference between consecutive frames
+    4. Threshold to get binary motion mask
+    5. Calculate percentage of pixels that changed
+    6. If above threshold, motion is detected
     """
 
     def __init__(
         self,
-        camera: Optional[CameraService] = None,
         motion_timeout_seconds: float = 3.0,
-        polling_interval: float = 0.5,
-        use_event_stream: bool = False
+        motion_threshold: float = 0.1,  # Percentage of pixels changed (0-100) - lowered for sensitivity
+        blur_size: int = 21,
+        diff_threshold: int = 20,  # Lowered for sensitivity (0-255)
+        min_area: int = 300,  # Lowered for detecting smaller movements
+        **kwargs  # Ignore unused args like camera, polling_interval
     ):
         """
-        Initialize motion trigger.
+        Initialize software motion trigger.
 
         Args:
-            camera: CameraService instance for ISAPI access
             motion_timeout_seconds: Continue processing for N seconds after motion stops
-            polling_interval: How often to poll motion status (seconds)
-            use_event_stream: Use alertStream instead of polling (experimental)
+            motion_threshold: Percentage of changed pixels to trigger motion (0.1-5.0 typical)
+            blur_size: Gaussian blur kernel size (must be odd)
+            diff_threshold: Pixel difference threshold (0-255)
+            min_area: Minimum contour area to consider as motion
         """
-        self.camera = camera or CameraService()
         self.motion_timeout = motion_timeout_seconds
-        self.polling_interval = polling_interval
-        self.use_event_stream = use_event_stream
+        self.motion_threshold = motion_threshold
+        self.blur_size = blur_size
+        self.diff_threshold = diff_threshold
+        self.min_area = min_area
 
         # State
         self.state = MotionState()
         self._running = False
-        self._poll_thread: Optional[threading.Thread] = None
-        self._event_task: Optional[asyncio.Task] = None
         self._lock = threading.Lock()
+
+        # Frame differencing state
+        self._prev_frame: Optional[np.ndarray] = None
+        self._frame_count = 0
+        self._skip_frames = 2  # Skip first few frames for initialization
 
         # Callbacks
         self._on_motion_start: Optional[Callable] = None
@@ -79,133 +93,112 @@ class MotionTrigger:
         self._total_motion_events = 0
         self._processing_saved_frames = 0
 
-        logger.info(f"MotionTrigger initialized (timeout={motion_timeout_seconds}s, polling={polling_interval}s)")
+        logger.info(f"MotionTrigger initialized (SOFTWARE mode): "
+                   f"timeout={motion_timeout_seconds}s, threshold={motion_threshold}%")
 
     def start(self):
-        """Start motion monitoring."""
+        """Start motion detection (no background thread needed - processes inline)."""
         if self._running:
             return
-
         self._running = True
-
-        if self.use_event_stream:
-            # Start async event stream listener
-            logger.info("Starting motion event stream listener...")
-            # This needs to run in the event loop
-        else:
-            # Start polling thread
-            self._poll_thread = threading.Thread(target=self._polling_loop, daemon=True)
-            self._poll_thread.start()
-            logger.info("Started motion polling thread")
+        self._prev_frame = None
+        self._frame_count = 0
+        logger.info("Software motion detection started")
 
     def stop(self):
-        """Stop motion monitoring."""
+        """Stop motion detection."""
         self._running = False
-
-        if self._poll_thread:
-            self._poll_thread.join(timeout=2.0)
-            self._poll_thread = None
-
-        if self._event_task:
-            self._event_task.cancel()
-
+        self._prev_frame = None
         logger.info(f"MotionTrigger stopped. Stats: {self._total_motion_events} events, "
                    f"{self._processing_saved_frames} frames saved from processing")
 
-    def _polling_loop(self):
-        """Background thread that polls motion status via ISAPI."""
-        import time
-        import httpx
+    def detect_motion(self, frame: np.ndarray) -> bool:
+        """
+        Detect motion in the given frame using frame differencing.
 
-        # Create sync client for polling
-        client = httpx.Client(
-            auth=httpx.DigestAuth(self.camera.username, self.camera.password),
-            timeout=5.0
-        )
+        Args:
+            frame: BGR frame from camera
 
-        url = f"{self.camera.base_url}/ISAPI/Event/triggers/VMD-1/status"
+        Returns:
+            True if motion detected, False otherwise
+        """
+        if frame is None:
+            return False
 
-        while self._running:
-            try:
-                response = client.get(url)
+        self._frame_count += 1
 
-                if response.status_code == 200:
-                    # Parse motion status from XML
-                    text = response.text.lower()
-                    motion_detected = '<eventstate>active</eventstate>' in text
+        # Convert to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-                    with self._lock:
-                        self.state.last_poll_time = datetime.now()
+        # Apply Gaussian blur to reduce noise
+        gray = cv2.GaussianBlur(gray, (self.blur_size, self.blur_size), 0)
 
-                        if motion_detected:
-                            # Motion detected
-                            if not self.state.is_active:
-                                # New motion event
-                                self._total_motion_events += 1
-                                logger.info(f"Motion detected (event #{self._total_motion_events})")
-                                if self._on_motion_start:
-                                    self._on_motion_start()
+        # Skip first few frames for initialization
+        if self._frame_count <= self._skip_frames:
+            self._prev_frame = gray
+            return True  # Process anyway during init
 
-                            self.state.is_active = True
-                            self.state.last_motion_time = datetime.now()
-                            self.state.motion_count += 1
+        # First frame - no comparison possible
+        if self._prev_frame is None:
+            self._prev_frame = gray
+            return True  # Process anyway
 
-                        else:
-                            # No motion - check timeout
-                            if self.state.is_active and self.state.last_motion_time:
-                                elapsed = (datetime.now() - self.state.last_motion_time).total_seconds()
+        # Compute absolute difference
+        frame_delta = cv2.absdiff(self._prev_frame, gray)
 
-                                if elapsed > self.motion_timeout:
-                                    # Motion timeout - stop processing
-                                    self.state.is_active = False
-                                    logger.info(f"Motion ended (was active for {self.state.motion_count} polls)")
-                                    self.state.motion_count = 0
+        # Threshold the difference
+        thresh = cv2.threshold(frame_delta, self.diff_threshold, 255, cv2.THRESH_BINARY)[1]
 
-                                    if self._on_motion_stop:
-                                        self._on_motion_stop()
+        # Dilate to fill gaps
+        thresh = cv2.dilate(thresh, None, iterations=2)
 
-                else:
-                    logger.debug(f"Motion status check failed: {response.status_code}")
+        # Find contours
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            except Exception as e:
-                logger.debug(f"Motion polling error: {e}")
+        # Calculate total motion area
+        motion_area = sum(cv2.contourArea(c) for c in contours if cv2.contourArea(c) > self.min_area)
+        total_area = frame.shape[0] * frame.shape[1]
+        motion_percentage = (motion_area / total_area) * 100
 
-            time.sleep(self.polling_interval)
+        # Update previous frame (use weighted average for stability)
+        self._prev_frame = cv2.addWeighted(gray, 0.5, self._prev_frame, 0.5, 0)
 
-        client.close()
+        # Determine if motion detected
+        motion_detected = motion_percentage > self.motion_threshold
 
-    async def _event_stream_loop(self):
-        """Async task that listens to alertStream for real-time events."""
-        while self._running:
-            try:
-                await self.camera.subscribe_motion_events(self._handle_motion_event)
-            except Exception as e:
-                logger.error(f"Event stream error: {e}, reconnecting in 5s...")
-                await asyncio.sleep(5.0)
-
-    async def _handle_motion_event(self, event: MotionEvent):
-        """Handle motion event from alertStream."""
         with self._lock:
-            if event.active:
+            self.state.motion_score = motion_percentage
+
+            if motion_detected:
                 if not self.state.is_active:
+                    # New motion event
                     self._total_motion_events += 1
-                    logger.info(f"Motion event received (#{self._total_motion_events})")
+                    logger.debug(f"Motion detected: {motion_percentage:.2f}% (event #{self._total_motion_events})")
+                    if self._on_motion_start:
+                        self._on_motion_start()
 
                 self.state.is_active = True
                 self.state.last_motion_time = datetime.now()
-
-                if self._on_motion_start:
-                    self._on_motion_start()
+                self.state.motion_count += 1
             else:
-                # Inactive event - start timeout
-                pass  # Let polling handle timeout
+                # No motion - check timeout
+                if self.state.is_active and self.state.last_motion_time:
+                    elapsed = (datetime.now() - self.state.last_motion_time).total_seconds()
+                    if elapsed > self.motion_timeout:
+                        self.state.is_active = False
+                        logger.debug(f"Motion ended after {self.state.motion_count} frames")
+                        self.state.motion_count = 0
+                        if self._on_motion_stop:
+                            self._on_motion_stop()
+
+        return motion_detected
 
     def should_process(self) -> bool:
         """
         Check if face detection should run on current frame.
 
         Returns:
-            True if motion is active and frame should be processed
+            True if motion is active or in timeout window
         """
         if not settings.enable_motion_trigger:
             # Motion trigger disabled - always process
@@ -225,6 +218,21 @@ class MotionTrigger:
             # No motion - track saved frames
             self._processing_saved_frames += 1
             return False
+
+    def update_from_frame(self, frame: np.ndarray) -> bool:
+        """
+        Update motion state from a new frame.
+        Should be called for every frame to keep motion detection accurate.
+
+        Args:
+            frame: BGR frame from camera
+
+        Returns:
+            True if motion detected, False otherwise
+        """
+        if not self._running:
+            return True  # Not running = always process
+        return self.detect_motion(frame)
 
     def on_motion_start(self, callback: Callable):
         """Register callback for when motion starts."""
@@ -255,6 +263,7 @@ class MotionTrigger:
                 "frames_saved": self._processing_saved_frames,
                 "last_motion": self.state.last_motion_time.isoformat() if self.state.last_motion_time else None,
                 "motion_timeout_sec": self.motion_timeout,
+                "motion_score": round(self.state.motion_score, 2),
                 "enabled": settings.enable_motion_trigger
             }
 

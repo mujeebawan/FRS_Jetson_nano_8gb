@@ -490,8 +490,8 @@ async def enroll_from_camera(
     if not stream.is_running:
         raise HTTPException(status_code=400, detail="Stream not running. Start stream first.")
 
-    # Get latest frame from stream
-    frame_data = stream.get_latest_frame()
+    # Get latest RAW frame from stream (without overlays for clean enrollment)
+    frame_data = stream.get_latest_raw_frame()
     if frame_data is None:
         raise HTTPException(status_code=400, detail="No frame available")
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { alertsApi, getPersonImageUrl } from '../services/api';
 import {
   Bell, Check, Trash2, AlertCircle, User, Shield, AlertTriangle,
@@ -41,6 +41,10 @@ export function AlertList({ fullPage = false }: AlertListProps) {
   const [loading, setLoading] = useState(true);
   const [modalAlert, setModalAlert] = useState<Alert | null>(null);
   const [verifying, setVerifying] = useState<number | null>(null);
+
+  // Alert queue for handling multiple detections one by one
+  const [alertQueue, setAlertQueue] = useState<Alert[]>([]);
+  const alertQueueRef = React.useRef<Alert[]>([]);
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -96,41 +100,77 @@ export function AlertList({ fullPage = false }: AlertListProps) {
     window.open(url, '_blank');
   };
 
-  // WebSocket for real-time alerts (only connect once)
+  // Track last seen alert ID for polling
+  const lastAlertIdRef = React.useRef<number>(0);
+  const wsConnectedRef = React.useRef<boolean>(false);
+
+  // WebSocket for real-time alerts with reconnection
   useEffect(() => {
-    const wsUrl = alertsApi.getWebSocketUrl();
-    console.log('Connecting to WebSocket:', wsUrl);
-    const websocket = new WebSocket(wsUrl);
+    let websocket: WebSocket | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let isUnmounting = false;
 
-    websocket.onopen = () => {
-      console.log('WebSocket connected successfully');
-    };
+    const connect = () => {
+      if (isUnmounting) return;
 
-    websocket.onmessage = (event) => {
-      console.log('WebSocket received:', event.data);
-      const newAlert = JSON.parse(event.data);
-      setAlerts((prev) => [newAlert, ...prev]);
+      const wsUrl = alertsApi.getWebSocketUrl();
+      console.log('Connecting to WebSocket:', wsUrl);
+      websocket = new WebSocket(wsUrl);
 
-      // Auto-open modal popup for new alerts
-      setModalAlert(newAlert);
+      websocket.onopen = () => {
+        console.log('WebSocket connected successfully');
+        wsConnectedRef.current = true;
+      };
 
-      // Show browser notification
-      if (Notification.permission === 'granted') {
-        const title = newAlert.threat_level === 'critical' ? 'CRITICAL ALERT!' : 'Face Recognition Alert';
-        new Notification(title, {
-          body: `${newAlert.watchlist_status?.toUpperCase() || newAlert.alert_type}: ${newAlert.person_name || 'Unknown'}\n${newAlert.displayed_prompt || ''}`,
-          requireInteraction: newAlert.threat_level === 'critical',
+      websocket.onmessage = (event) => {
+        console.log('WebSocket received:', event.data);
+        const newAlert = JSON.parse(event.data);
+
+        // Update last seen ID
+        if (newAlert.id > lastAlertIdRef.current) {
+          lastAlertIdRef.current = newAlert.id;
+        }
+
+        setAlerts((prev) => {
+          // Avoid duplicates
+          if (prev.some(a => a.id === newAlert.id)) return prev;
+          return [newAlert, ...prev];
         });
-      }
+
+        // Queue system: Add to queue instead of immediately showing
+        // If no modal is open, show immediately. Otherwise, add to queue.
+        setAlertQueue((prevQueue) => {
+          const updatedQueue = [...prevQueue, newAlert];
+          alertQueueRef.current = updatedQueue;
+          return updatedQueue;
+        });
+
+        // Show browser notification
+        if (Notification.permission === 'granted') {
+          const title = newAlert.threat_level === 'critical' ? 'CRITICAL ALERT!' : 'Face Recognition Alert';
+          new Notification(title, {
+            body: `${newAlert.watchlist_status?.toUpperCase() || newAlert.alert_type}: ${newAlert.person_name || 'Unknown'}\n${newAlert.displayed_prompt || ''}`,
+            requireInteraction: newAlert.threat_level === 'critical',
+          });
+        }
+      };
+
+      websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        wsConnectedRef.current = false;
+      };
+
+      websocket.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
+        wsConnectedRef.current = false;
+        // Reconnect after 3 seconds
+        if (!isUnmounting) {
+          reconnectTimeout = setTimeout(connect, 3000);
+        }
+      };
     };
 
-    websocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-
-    websocket.onclose = (event) => {
-      console.log('WebSocket closed:', event.code, event.reason);
-    };
+    connect();
 
     // Request notification permission
     if (Notification.permission === 'default') {
@@ -138,9 +178,47 @@ export function AlertList({ fullPage = false }: AlertListProps) {
     }
 
     return () => {
-      websocket.close();
+      isUnmounting = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (websocket) websocket.close();
     };
   }, []);
+
+  // Polling fallback - refresh every 5 seconds if WebSocket is not connected
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      if (!wsConnectedRef.current) {
+        console.log('WebSocket not connected, polling for alerts...');
+        loadAlerts();
+      }
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
+  }, [loadAlerts]);
+
+  // Also auto-refresh every 30 seconds regardless (for staleness)
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      loadAlerts();
+    }, 30000);
+
+    return () => clearInterval(refreshInterval);
+  }, [loadAlerts]);
+
+  // Process alert queue - show next alert when modal is closed
+  useEffect(() => {
+    // If no modal is open and there are alerts in queue, show the first one
+    if (!modalAlert && alertQueue.length > 0) {
+      const nextAlert = alertQueue[0];
+      setModalAlert(nextAlert);
+      // Remove from queue
+      setAlertQueue((prev) => {
+        const newQueue = prev.slice(1);
+        alertQueueRef.current = newQueue;
+        return newQueue;
+      });
+    }
+  }, [modalAlert, alertQueue]);
 
   const handleAcknowledge = async (alertId: number) => {
     try {
@@ -227,6 +305,13 @@ export function AlertList({ fullPage = false }: AlertListProps) {
               <button className="modal-close-btn" onClick={closeModal}>
                 <X size={24} />
               </button>
+              {/* Queue indicator */}
+              {alertQueue.length > 0 && (
+                <div className="queue-indicator">
+                  <Bell size={16} />
+                  <span>{alertQueue.length} more alert{alertQueue.length > 1 ? 's' : ''} pending</span>
+                </div>
+              )}
             </div>
 
             {/* Guard Prompt */}

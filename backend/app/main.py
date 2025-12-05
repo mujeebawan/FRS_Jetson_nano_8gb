@@ -57,6 +57,7 @@ async def lifespan(app: FastAPI):
 
     # Load saved embeddings
     app.state.recognizer.load()
+    logger.info(f"Recognizer loaded {app.state.recognizer.count} persons")
 
     # Initialize alert manager
     app.state.alert_manager = AlertManager()
@@ -79,6 +80,11 @@ async def lifespan(app: FastAPI):
                         # Known person - look up in database
                         person = db.query(Person).filter(Person.name == result.person_name).first()
                         similarity = result.similarity
+                        logger.info(f"Face recognized: {result.person_name} (sim={result.similarity:.2f})")
+                    else:
+                        logger.debug(f"Face not recognized (no match)")
+                else:
+                    logger.debug(f"Face detected but no embedding")
 
                 # Create alert (AlertManager handles cooldown internally)
                 alert = app.state.alert_manager.create_alert(
@@ -87,17 +93,19 @@ async def lifespan(app: FastAPI):
                     person=person,
                     confidence=detection.confidence,
                     similarity_score=similarity,
-                    frame=frame_data.frame if frame_data else None
+                    frame=frame_data.frame if frame_data else None,
+                    bbox=detection.bbox if detection else None
                 )
 
                 # Broadcast to WebSocket subscribers (thread-safe sync version)
                 if alert:
+                    logger.info(f"Alert created and broadcasting: {alert.id} - {alert.person_name}")
                     broadcast_alert_sync(alert)
 
             finally:
                 db.close()
         except Exception as e:
-            logger.error(f"Alert callback error: {e}")
+            logger.error(f"Alert callback error: {e}", exc_info=True)
 
     # Connect frame processor object to stream for face detection
     # Pass the object (not function) so stream can call draw_overlay() for non-detection frames
@@ -113,6 +121,12 @@ async def lifespan(app: FastAPI):
     info = await app.state.camera.get_device_info()
     if info:
         logger.info(f"Connected to {info.model} (FW: {info.firmware})")
+
+    # Auto-start stream on startup
+    if app.state.stream.start():
+        logger.info("Camera stream auto-started")
+    else:
+        logger.warning("Failed to auto-start camera stream")
 
     yield
 

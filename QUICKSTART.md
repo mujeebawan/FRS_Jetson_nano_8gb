@@ -182,17 +182,12 @@ curl -X POST "http://localhost:8000/api/system/models/change?model=buffalo_l"
 
 ---
 
-## Systemd Service
+## What `./start.sh` Does Automatically
 
-The system auto-starts on boot:
+1. Sets up camera network (192.168.1.100/24)
+2. Starts backend (loads AI models, connects to camera)
+3. Starts frontend (React UI)
+4. Starts camera stream
+5. Shows access URLs
 
-```bash
-# Check status
-sudo systemctl status frs
-
-# Restart
-sudo systemctl restart frs
-
-# View logs
-journalctl -u frs -f
-```
+Everything is handled - just run `./start.sh` and you're ready!

@@ -14,6 +14,7 @@ export const streamApi = {
   start: () => api.get('/stream/start'),
   stop: () => api.get('/stream/stop'),
   status: () => api.get('/stream/status'),
+  getBaseUrl: () => API_BASE_URL,
   getMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg`,
   getWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws`,
 };

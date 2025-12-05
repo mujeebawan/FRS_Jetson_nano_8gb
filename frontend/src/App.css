@@ -1450,6 +1450,40 @@ body {
   color: var(--text-primary);
 }
 
+/* Alert Queue Indicator */
+.queue-indicator {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(245, 158, 11, 0.9);
+  color: #1e293b;
+  padding: 0.5rem 1rem;
+  border-radius: 2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  animation: pulse-queue 2s infinite;
+  z-index: 10;
+}
+
+.queue-indicator svg {
+  animation: ring 1s ease-in-out infinite;
+}
+
+@keyframes pulse-queue {
+  0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.8; transform: translateX(-50%) scale(1.02); }
+}
+
+@keyframes ring {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(10deg); }
+  75% { transform: rotate(-10deg); }
+}
+
 /* Guard Prompt in Modal */
 .modal-guard-prompt {
   display: flex;
@@ -1931,6 +1965,123 @@ body {
   color: var(--primary);
 }
 
+/* Capture hint text */
+.capture-hint {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+}
+
+/* Capture Details Container - Two column layout */
+.capture-details-container {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 1.5rem;
+  padding: 1rem;
+}
+
+.captured-image-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.captured-image {
+  width: 100%;
+  max-width: 250px;
+  border-radius: 0.5rem;
+  border: 2px solid var(--primary);
+}
+
+.retake-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.capture-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.capture-form-section .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.capture-form-section label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.capture-form-section input,
+.capture-form-section select {
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.capture-form-section input:focus,
+.capture-form-section select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.form-row-inline {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+/* Enrollment Options Section */
+.enroll-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.camera-enroll-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--primary);
+  border-radius: 0.5rem;
+}
+
+.camera-enroll-btn:hover {
+  background: #2563eb;
+}
+
+.file-enroll {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+}
+
+.file-enroll .form-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
 /* Responsive Camera Modal */
 @media (max-width: 600px) {
   .camera-modal {
@@ -1944,6 +2095,10 @@ body {
   .face-oval {
     width: 150px;
     height: 195px;
+  }
+
+  .capture-details-container {
+    grid-template-columns: 1fr;
   }
 }
 

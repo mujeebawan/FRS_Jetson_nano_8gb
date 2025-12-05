@@ -87,6 +87,7 @@ class StreamManager:
 
         # Frame distribution
         self._latest_frame: Optional[FrameData] = None
+        self._latest_raw_frame: Optional[FrameData] = None  # Clean frame without overlays (for enrollment)
         self._frame_number = 0
         self._subscribers: Set[asyncio.Queue] = set()
 
@@ -198,9 +199,13 @@ class StreamManager:
                 self._frame_number += 1
                 self._process_counter += 1
 
-                # Check if motion is detected (if trigger enabled)
+                # Run software motion detection on EVERY frame (updates internal state)
+                # Then check if we should process based on motion state + timeout
                 has_motion = True  # Default: always process
                 if self._motion_trigger:
+                    # Update motion detection with current frame (this analyzes pixels)
+                    self._motion_trigger.update_from_frame(frame)
+                    # Then check if we should process (motion active or in timeout window)
                     has_motion = self._motion_trigger.should_process()
 
                 # Create frame data
@@ -239,6 +244,15 @@ class StreamManager:
                     except:
                         pass  # Queue full, skip this frame
 
+                # Save raw frame (without overlays) for enrollment
+                with self._lock:
+                    self._latest_raw_frame = FrameData(
+                        frame=frame.copy(),
+                        timestamp=frame_data.timestamp,
+                        frame_number=frame_data.frame_number,
+                        has_motion=has_motion
+                    )
+
                 # Draw cached overlays (very fast, ~1ms)
                 if self._processor_obj:
                     try:
@@ -246,7 +260,7 @@ class StreamManager:
                     except Exception as e:
                         pass  # Ignore overlay errors
 
-                # Update latest frame
+                # Update latest frame (with overlays for display)
                 with self._lock:
                     self._latest_frame = frame_data
 
@@ -395,15 +409,22 @@ class StreamManager:
         if hasattr(processor, 'draw_overlay') and hasattr(processor, 'process'):
             self._processor_obj = processor
             self._processor = None
+            logger.info(f"FrameProcessor connected: {type(processor).__name__}")
         else:
             # Legacy function-based processor
             self._processor = processor
             self._processor_obj = None
+            logger.info(f"Legacy processor function connected")
 
     def get_latest_frame(self) -> Optional[FrameData]:
-        """Get the most recent frame."""
+        """Get the most recent frame (with overlays for display)."""
         with self._lock:
             return self._latest_frame
+
+    def get_latest_raw_frame(self) -> Optional[FrameData]:
+        """Get the most recent raw frame (without overlays, for enrollment)."""
+        with self._lock:
+            return self._latest_raw_frame
 
     def encode_jpeg(self, frame: np.ndarray, quality: int = 80) -> bytes:
         """Encode frame as JPEG."""

@@ -1,0 +1,21 @@
+[Unit]
+Description=Face Recognition System - Frontend
+After=network.target frs.service
+Wants=frs.service
+
+[Service]
+Type=simple
+User=tempuser
+Group=Mujeeb
+WorkingDirectory=/home/tempuser/Downloads/frs/frontend
+Environment="PATH=/home/tempuser/.nvm/versions/node/v24.11.1/bin:/home/tempuser/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/tempuser/.nvm/versions/node/v24.11.1/bin/npm run dev -- --host 0.0.0.0 --port 5173
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=append:/var/log/frs/frontend.log
+StandardError=append:/var/log/frs/frontend.log
+
+[Install]
+WantedBy=multi-user.target

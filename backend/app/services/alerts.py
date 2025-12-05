@@ -32,9 +32,7 @@ class AlertManager:
         self._last_alert_times: Dict[str, datetime] = {}
         self._cooldown_seconds = settings.alert_cooldown_seconds
 
-        # Alert configuration
-        self.alert_on_unknown = settings.alert_on_unknown
-        self.alert_on_known = settings.alert_on_known
+        # Alert configuration - read dynamically from settings
         self.save_snapshot = settings.alert_save_snapshot
 
         logger.info(f"AlertManager initialized. Snapshots dir: {self.alerts_dir}")
@@ -66,15 +64,25 @@ class AlertManager:
         self._last_alert_times[cooldown_key] = datetime.now()
         return True
 
-    def save_alert_snapshot(self, frame, alert_id: int) -> Optional[str]:
+    def save_alert_snapshot(
+        self,
+        frame,
+        alert_id: int,
+        bbox: Optional[tuple] = None,
+        person_name: Optional[str] = None,
+        threat_level: Optional[str] = None
+    ) -> Optional[str]:
         """
-        Save frame snapshot for alert in date-wise folder.
+        Save full frame snapshot with face highlighted for alert.
 
         Structure: data/snapshots/{YYYY-MM-DD}/alert_{id}_{HHMMSS}.jpg
 
         Args:
             frame: OpenCV frame (BGR numpy array)
             alert_id: Alert database ID
+            bbox: Face bounding box (x, y, width, height) to highlight
+            person_name: Name to display on the box
+            threat_level: Threat level for color coding
 
         Returns:
             Path to saved snapshot, or None if failed
@@ -83,12 +91,66 @@ class AlertManager:
             return None
 
         try:
+            # Make a copy to draw on
+            annotated_frame = frame.copy()
+
+            # Draw face highlight box if bbox provided
+            if bbox is not None:
+                x, y, w, h = bbox
+
+                # Color based on threat level (BGR format)
+                if threat_level == 'critical':
+                    color = (0, 0, 255)  # Red
+                    thickness = 4
+                elif threat_level == 'high':
+                    color = (0, 128, 255)  # Orange
+                    thickness = 3
+                elif threat_level in ['medium', 'low']:
+                    color = (0, 255, 255)  # Yellow
+                    thickness = 2
+                else:
+                    color = (0, 255, 0)  # Green for unknown/normal
+                    thickness = 2
+
+                # Draw rectangle around face
+                cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), color, thickness)
+
+                # Draw label background and text
+                label = person_name or "Unknown"
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.8
+                label_thickness = 2
+
+                # Get text size for background
+                (text_w, text_h), baseline = cv2.getTextSize(label, font, font_scale, label_thickness)
+
+                # Draw filled rectangle behind text
+                label_y = max(y - 10, text_h + 10)
+                cv2.rectangle(
+                    annotated_frame,
+                    (x, label_y - text_h - 5),
+                    (x + text_w + 10, label_y + 5),
+                    color,
+                    -1  # Filled
+                )
+
+                # Draw text
+                cv2.putText(
+                    annotated_frame,
+                    label,
+                    (x + 5, label_y),
+                    font,
+                    font_scale,
+                    (255, 255, 255),  # White text
+                    label_thickness
+                )
+
             date_folder = self._get_date_folder()
             time_str = datetime.now().strftime("%H%M%S")
             filename = f"alert_{alert_id}_{time_str}.jpg"
             filepath = date_folder / filename
 
-            cv2.imwrite(str(filepath), frame)
+            cv2.imwrite(str(filepath), annotated_frame)
             logger.info(f"Alert snapshot saved: {filepath}")
             return str(filepath)
 
@@ -157,26 +219,32 @@ class AlertManager:
         # Check cooldown
         person_id = person.id if person else None
         if not self._check_cooldown(person_id, event_type):
+            logger.debug(f"Alert skipped (cooldown): person_id={person_id}")
             return False
 
-        # Check configuration
+        # Check configuration - read dynamically from settings
         if person is None:
-            # Unknown person
-            return self.alert_on_unknown
+            # Unknown person - no alert (we only care about known persons)
+            logger.debug(f"Alert skipped (unknown person): alert_on_unknown={settings.alert_on_unknown}")
+            return settings.alert_on_unknown
 
         # Known person - check their status
         status = person.watchlist_status
+        logger.info(f"Checking alert for {person.name}: status={status}, threat={person.threat_level}")
 
         # Only alert on watchlist persons (criminal, suspect, banned, etc.)
         # NOT on normal persons - we only want criminal detection alerts
         if status in ['criminal', 'most_wanted', 'suspect', 'person_of_interest', 'banned']:
+            logger.info(f"Alert APPROVED for {person.name} (watchlist: {status})")
             return True
 
         # VIP alerts (optional, controlled by config)
-        if status == 'vip' and self.alert_on_known:
+        if status == 'vip' and settings.alert_on_known:
+            logger.info(f"Alert APPROVED for VIP {person.name}")
             return True
 
         # Normal persons - NO alert (this is a security system for criminals)
+        logger.debug(f"Alert skipped (normal person): {person.name}")
         return False
 
     def create_alert(
@@ -186,7 +254,8 @@ class AlertManager:
         person: Optional[Person] = None,
         confidence: Optional[float] = None,
         similarity_score: Optional[float] = None,
-        frame=None
+        frame=None,
+        bbox: Optional[tuple] = None
     ) -> Optional[Alert]:
         """
         Create and save alert to database.
@@ -198,6 +267,7 @@ class AlertManager:
             confidence: Detection confidence
             similarity_score: Face similarity score
             frame: Video frame for snapshot
+            bbox: Face bounding box (x, y, w, h) for highlighting
 
         Returns:
             Created Alert object, or None if not created
@@ -234,9 +304,15 @@ class AlertManager:
             db.add(alert)
             db.flush()  # Get ID before committing
 
-            # Save snapshot
+            # Save snapshot with face highlight
             if self.save_snapshot and frame is not None:
-                snapshot_path = self.save_alert_snapshot(frame, alert.id)
+                snapshot_path = self.save_alert_snapshot(
+                    frame,
+                    alert.id,
+                    bbox=bbox,
+                    person_name=person.name if person else "Unknown",
+                    threat_level=threat_level
+                )
                 alert.snapshot_path = snapshot_path
 
             db.commit()

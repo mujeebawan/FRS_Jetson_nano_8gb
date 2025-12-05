@@ -1,7 +1,7 @@
 """Stream API routes"""
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.responses import StreamingResponse, Response
 import asyncio
 
 router = APIRouter()
@@ -39,6 +39,25 @@ async def stream_status(request: Request):
         response["motion"] = motion_stats
 
     return response
+
+
+@router.get("/snapshot")
+async def get_snapshot(request: Request):
+    """Get a single JPEG snapshot from the current stream (raw, without overlays)."""
+    stream = request.app.state.stream
+
+    if not stream.is_running:
+        raise HTTPException(status_code=400, detail="Stream not running")
+
+    # Get raw frame (without bounding boxes) for enrollment
+    frame_data = stream.get_latest_raw_frame()
+    if frame_data is None or frame_data.frame is None:
+        raise HTTPException(status_code=404, detail="No frame available")
+
+    # Encode as JPEG
+    jpeg = stream.encode_jpeg(frame_data.frame, quality=90)
+
+    return Response(content=jpeg, media_type="image/jpeg")
 
 
 @router.get("/mjpeg")

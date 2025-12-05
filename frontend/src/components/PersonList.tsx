@@ -33,7 +33,6 @@ interface PersonDetails {
 export function PersonList() {
   const [persons, setPersons] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
-  const [enrollMode, setEnrollMode] = useState<'file' | 'camera'>('file');
   const [enrolling, setEnrolling] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showCameraModal, setShowCameraModal] = useState(false);
@@ -55,6 +54,10 @@ export function PersonList() {
   const [enrollFile, setEnrollFile] = useState<File | null>(null);
   const [watchlistStatus, setWatchlistStatus] = useState('criminal');
   const [threatLevel, setThreatLevel] = useState('high');
+
+  // Camera capture state - capture first, then fill details
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [captureStep, setCaptureStep] = useState<'preview' | 'details'>('preview');
 
   // Debounce search
   useEffect(() => {
@@ -115,39 +118,29 @@ export function PersonList() {
     setEnrollFile(null);
     setWatchlistStatus('criminal');
     setThreatLevel('high');
+    setCapturedImage(null);
+    setCaptureStep('preview');
     // Reset file input
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
   };
 
+  // Handle file-based enrollment
   const handleEnroll = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!enrollName.trim()) {
       showMessage('error', 'Name is required');
       return;
     }
-
-    if (enrollMode === 'camera') {
-      // Open camera modal instead of direct enrollment
-      // Start the stream first
-      try {
-        await streamApi.start();
-      } catch (err) {
-        console.log('Stream may already be running');
-      }
-      setStreamKey(Date.now()); // Force fresh stream
-      setShowCameraModal(true);
+    if (!enrollFile) {
+      showMessage('error', 'Please select an image file');
       return;
     }
 
     try {
       setEnrolling(true);
       setMessage(null);
-
-      if (!enrollFile) {
-        showMessage('error', 'Please select an image file');
-        return;
-      }
       await personsApi.enroll(
         enrollName.trim(),
         enrollFile,
@@ -157,7 +150,6 @@ export function PersonList() {
         threatLevel
       );
       showMessage('success', `Successfully enrolled ${enrollName}!`);
-
       resetForm();
       loadPersons(debouncedSearch);
     } catch (err) {
@@ -172,7 +164,42 @@ export function PersonList() {
     }
   };
 
-  const handleCameraCapture = async () => {
+  // Open camera modal directly - no details required first
+  const openCameraEnroll = async () => {
+    try {
+      await streamApi.start();
+    } catch (err) {
+      console.log('Stream may already be running');
+    }
+    setCapturedImage(null);
+    setCaptureStep('preview');
+    setStreamKey(Date.now());
+    setShowCameraModal(true);
+  };
+
+  // Capture snapshot from stream - just get the image, don't enroll yet
+  const handleCaptureSnapshot = async () => {
+    try {
+      // Get current frame as snapshot (getBaseUrl already includes /api)
+      const response = await fetch(`${streamApi.getBaseUrl()}/stream/snapshot`);
+      if (!response.ok) throw new Error('Failed to capture snapshot');
+      const blob = await response.blob();
+      const imageUrl = URL.createObjectURL(blob);
+      setCapturedImage(imageUrl);
+      setCaptureStep('details');
+    } catch (err) {
+      console.error('Snapshot capture failed:', err);
+      showMessage('error', 'Failed to capture snapshot. Please try again.');
+    }
+  };
+
+  // After filling details, enroll the person
+  const handleCameraEnroll = async () => {
+    if (!enrollName.trim()) {
+      showMessage('error', 'Name is required');
+      return;
+    }
+
     try {
       setEnrolling(true);
       setMessage(null);
@@ -184,7 +211,7 @@ export function PersonList() {
         watchlistStatus,
         threatLevel
       );
-      showMessage('success', `Successfully enrolled ${enrollName} from camera!`);
+      showMessage('success', `Successfully enrolled ${enrollName}!`);
 
       setShowCameraModal(false);
       resetForm();
@@ -194,11 +221,18 @@ export function PersonList() {
       if (axios.isAxiosError(err) && err.response?.data?.detail) {
         showMessage('error', err.response.data.detail);
       } else {
-        showMessage('error', 'Enrollment failed. Make sure a clear face is visible in the camera.');
+        showMessage('error', 'Enrollment failed. Make sure a clear face is visible.');
       }
     } finally {
       setEnrolling(false);
     }
+  };
+
+  // Go back to preview step
+  const handleRetake = () => {
+    setCapturedImage(null);
+    setCaptureStep('preview');
+    setStreamKey(Date.now());
   };
 
   const closeCameraModal = () => {
@@ -346,14 +380,14 @@ export function PersonList() {
         </div>
       )}
 
-      {/* Camera Capture Modal */}
+      {/* Camera Capture Modal - Two Steps: Preview -> Details */}
       {showCameraModal && (
         <div className="camera-modal-overlay" onClick={closeCameraModal}>
           <div className="camera-modal" onClick={(e) => e.stopPropagation()}>
             <div className="camera-modal-header">
               <h2>
                 <CameraIcon size={24} />
-                Capture Photo for {enrollName}
+                {captureStep === 'preview' ? 'Capture Photo' : 'Enter Details'}
               </h2>
               <button className="modal-close-btn" onClick={closeCameraModal}>
                 <X size={24} />
@@ -361,63 +395,126 @@ export function PersonList() {
             </div>
 
             <div className="camera-modal-body">
-              <div className="camera-preview">
-                <img
-                  key={streamKey}
-                  ref={streamRef}
-                  src={`${streamApi.getMjpegUrl()}?t=${streamKey}`}
-                  alt="Camera Preview"
-                  className="camera-stream"
-                />
-                <div className="face-guide">
-                  <div className="face-oval"></div>
-                  <span>Position face within the oval</span>
-                </div>
-                <button className="stream-refresh-btn" onClick={refreshStream} title="Refresh stream">
-                  <RefreshCw size={18} />
-                </button>
-              </div>
+              {captureStep === 'preview' ? (
+                /* Step 1: Live Preview - Capture */
+                <>
+                  <div className="camera-preview">
+                    <img
+                      key={streamKey}
+                      ref={streamRef}
+                      src={`${streamApi.getMjpegUrl()}?t=${streamKey}`}
+                      alt="Camera Preview"
+                      className="camera-stream"
+                    />
+                    <div className="face-guide">
+                      <div className="face-oval"></div>
+                      <span>Position face within the oval</span>
+                    </div>
+                    <button className="stream-refresh-btn" onClick={refreshStream} title="Refresh stream">
+                      <RefreshCw size={18} />
+                    </button>
+                  </div>
+                  <p className="capture-hint">Position the person's face clearly, then click Capture</p>
+                </>
+              ) : (
+                /* Step 2: Show captured image + Enter details */
+                <div className="capture-details-container">
+                  <div className="captured-image-section">
+                    {capturedImage && (
+                      <img src={capturedImage} alt="Captured" className="captured-image" />
+                    )}
+                    <button className="btn btn-secondary retake-btn" onClick={handleRetake}>
+                      <RefreshCw size={16} />
+                      Retake
+                    </button>
+                  </div>
 
-              <div className="camera-info">
-                <div className="info-row">
-                  <span className="info-label">Name:</span>
-                  <span className="info-value">{enrollName}</span>
-                </div>
-                {enrollIdCard && (
-                  <div className="info-row">
-                    <span className="info-label">ID Card:</span>
-                    <span className="info-value">{enrollIdCard}</span>
+                  <div className="capture-form-section">
+                    <div className="form-group">
+                      <label>Name *</label>
+                      <input
+                        type="text"
+                        placeholder="Enter person's name"
+                        value={enrollName}
+                        onChange={(e) => setEnrollName(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>ID Card</label>
+                      <input
+                        type="text"
+                        placeholder="ID card number"
+                        value={enrollIdCard}
+                        onChange={(e) => setEnrollIdCard(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Case / Notes</label>
+                      <input
+                        type="text"
+                        placeholder="Case details or notes"
+                        value={enrollCase}
+                        onChange={(e) => setEnrollCase(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-row-inline">
+                      <div className="form-group">
+                        <label>Status</label>
+                        <select
+                          value={watchlistStatus}
+                          onChange={(e) => setWatchlistStatus(e.target.value)}
+                        >
+                          <option value="criminal">Criminal</option>
+                          <option value="most_wanted">Most Wanted</option>
+                          <option value="suspect">Suspect</option>
+                          <option value="person_of_interest">Person of Interest</option>
+                          <option value="banned">Banned</option>
+                          <option value="vip">VIP</option>
+                          <option value="normal">Normal</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Threat Level</label>
+                        <select
+                          value={threatLevel}
+                          onChange={(e) => setThreatLevel(e.target.value)}
+                        >
+                          <option value="critical">Critical</option>
+                          <option value="high">High</option>
+                          <option value="medium">Medium</option>
+                          <option value="low">Low</option>
+                          <option value="none">None</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                )}
-                {enrollCase && (
-                  <div className="info-row">
-                    <span className="info-label">Case:</span>
-                    <span className="info-value">{enrollCase}</span>
-                  </div>
-                )}
-                <div className="info-row">
-                  <span className="info-label">Status:</span>
-                  <span className="info-value">{watchlistStatus.replace('_', ' ')}</span>
                 </div>
-                <div className="info-row">
-                  <span className="info-label">Threat:</span>
-                  <span className="info-value">{threatLevel}</span>
-                </div>
-              </div>
+              )}
             </div>
 
             <div className="camera-modal-footer">
               <button className="btn btn-secondary" onClick={closeCameraModal}>
                 Cancel
               </button>
-              <button
-                className="btn btn-primary capture-btn"
-                onClick={handleCameraCapture}
-                disabled={enrolling}
-              >
-                <Camera size={20} />
-                {enrolling ? 'Capturing...' : 'Capture & Enroll'}
-              </button>
+              {captureStep === 'preview' ? (
+                <button
+                  className="btn btn-primary capture-btn"
+                  onClick={handleCaptureSnapshot}
+                >
+                  <Camera size={20} />
+                  Capture
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary enroll-btn"
+                  onClick={handleCameraEnroll}
+                  disabled={enrolling || !enrollName.trim()}
+                >
+                  <UserPlus size={20} />
+                  {enrolling ? 'Enrolling...' : 'Enroll Person'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -450,108 +547,81 @@ export function PersonList() {
           </div>
         )}
 
-        {/* Enrollment Form */}
-        <form onSubmit={handleEnroll} className="enroll-form">
-          {/* Mode Toggle */}
-          <div className="enroll-mode-toggle">
-            <button
-              type="button"
-              className={enrollMode === 'file' ? 'active' : ''}
-              onClick={() => setEnrollMode('file')}
-            >
+        {/* Enrollment Options */}
+        <div className="enroll-options">
+          {/* Camera Enroll Button - Quick action */}
+          <button
+            type="button"
+            className="btn btn-primary camera-enroll-btn"
+            onClick={openCameraEnroll}
+          >
+            <Camera size={20} />
+            Enroll from Camera
+          </button>
+
+          {/* File Upload Form */}
+          <form onSubmit={handleEnroll} className="enroll-form file-enroll">
+            <div className="form-header">
               <Image size={16} />
-              From File
-            </button>
-            <button
-              type="button"
-              className={enrollMode === 'camera' ? 'active' : ''}
-              onClick={() => setEnrollMode('camera')}
-            >
-              <Camera size={16} />
-              From Camera
-            </button>
-          </div>
-
-          {/* Form Fields */}
-          <div className="form-row">
-            <input
-              type="text"
-              placeholder="Name *"
-              value={enrollName}
-              onChange={(e) => setEnrollName(e.target.value)}
-              required
-            />
-            <input
-              type="text"
-              placeholder="ID Card Number"
-              value={enrollIdCard}
-              onChange={(e) => setEnrollIdCard(e.target.value)}
-            />
-          </div>
-
-          <div className="form-row">
-            <input
-              type="text"
-              placeholder="Case / Notes"
-              value={enrollCase}
-              onChange={(e) => setEnrollCase(e.target.value)}
-              className="full-width"
-            />
-          </div>
-
-          <div className="form-row">
-            <select
-              value={watchlistStatus}
-              onChange={(e) => setWatchlistStatus(e.target.value)}
-              className="form-select"
-            >
-              <option value="criminal">Criminal</option>
-              <option value="most_wanted">Most Wanted</option>
-              <option value="suspect">Suspect</option>
-              <option value="person_of_interest">Person of Interest</option>
-              <option value="banned">Banned</option>
-              <option value="vip">VIP</option>
-              <option value="normal">Normal</option>
-            </select>
-            <select
-              value={threatLevel}
-              onChange={(e) => setThreatLevel(e.target.value)}
-              className="form-select"
-            >
-              <option value="critical">Critical</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-              <option value="none">None</option>
-            </select>
-          </div>
-
-          {/* Image Input or Camera Hint */}
-          {enrollMode === 'file' ? (
+              <span>Or enroll from file:</span>
+            </div>
+            <div className="form-row">
+              <input
+                type="text"
+                placeholder="Name *"
+                value={enrollName}
+                onChange={(e) => setEnrollName(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="ID Card"
+                value={enrollIdCard}
+                onChange={(e) => setEnrollIdCard(e.target.value)}
+              />
+            </div>
+            <div className="form-row">
+              <select
+                value={watchlistStatus}
+                onChange={(e) => setWatchlistStatus(e.target.value)}
+                className="form-select"
+              >
+                <option value="criminal">Criminal</option>
+                <option value="most_wanted">Most Wanted</option>
+                <option value="suspect">Suspect</option>
+                <option value="person_of_interest">Person of Interest</option>
+                <option value="banned">Banned</option>
+                <option value="vip">VIP</option>
+                <option value="normal">Normal</option>
+              </select>
+              <select
+                value={threatLevel}
+                onChange={(e) => setThreatLevel(e.target.value)}
+                className="form-select"
+              >
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+                <option value="none">None</option>
+              </select>
+            </div>
             <div className="form-row">
               <input
                 type="file"
                 accept="image/*"
                 onChange={(e) => setEnrollFile(e.target.files?.[0] || null)}
               />
+              <button
+                type="submit"
+                disabled={enrolling || !enrollName.trim() || !enrollFile}
+                className="enroll-btn"
+              >
+                <UserPlus size={16} />
+                {enrolling ? 'Enrolling...' : 'Enroll'}
+              </button>
             </div>
-          ) : (
-            <div className="camera-hint">
-              <Camera size={18} />
-              <span>Click "Enroll Person" to open camera preview</span>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={enrolling || !enrollName.trim() || (enrollMode === 'file' && !enrollFile)}
-            className="enroll-btn"
-          >
-            <UserPlus size={16} />
-            {enrollMode === 'camera' ? 'Open Camera' : (enrolling ? 'Enrolling...' : 'Enroll Person')}
-          </button>
-        </form>
+          </form>
+        </div>
 
       {/* Person List */}
       {loading ? (
