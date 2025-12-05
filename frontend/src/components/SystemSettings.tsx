@@ -652,12 +652,13 @@ export function SystemSettings() {
               </div>
             )}
 
-            {/* Disk Usage */}
+            {/* Disk Usage & Alert Data in 2 columns */}
             <div className="storage-stats">
+              {/* Disk Usage Column */}
               <div className="storage-stat">
                 <div className="storage-stat-header">
                   <HardDrive size={18} />
-                  <span>Disk Usage</span>
+                  <span>NVMe SSD Storage</span>
                 </div>
                 <div className="storage-bar">
                   <div
@@ -666,20 +667,45 @@ export function SystemSettings() {
                   />
                 </div>
                 <div className="storage-stat-details">
-                  <span>{storage.disk.used_gb} GB / {storage.disk.total_gb} GB</span>
-                  <span className={storage.disk.percent_used >= 70 ? 'text-warning' : ''}>{storage.disk.percent_used}%</span>
+                  <span>{storage.disk.used_gb} GB used</span>
+                  <span className={storage.disk.percent_used >= 70 ? 'text-warning' : ''}>{storage.disk.percent_used}% full</span>
+                </div>
+                {/* Breakdown: Total / Used / Free */}
+                <div className="disk-breakdown">
+                  <div className="disk-item total">
+                    <span className="disk-value">{storage.disk.total_gb}</span>
+                    <span className="disk-label">Total GB</span>
+                  </div>
+                  <div className="disk-item used">
+                    <span className="disk-value">{storage.disk.used_gb}</span>
+                    <span className="disk-label">Used GB</span>
+                  </div>
+                  <div className="disk-item free">
+                    <span className="disk-value">{storage.disk.free_gb}</span>
+                    <span className="disk-label">Free GB</span>
+                  </div>
                 </div>
               </div>
 
+              {/* Alert Data Column */}
               <div className="storage-stat">
                 <div className="storage-stat-header">
                   <Video size={18} />
                   <span>Alert Data</span>
                 </div>
                 <div className="storage-stat-details alerts-data">
-                  <span>{storage.alerts_data.snapshots} snapshots</span>
-                  <span>{storage.alerts_data.videos} videos</span>
-                  <span>{storage.alerts_data.size_mb > 1000 ? `${storage.alerts_data.size_gb} GB` : `${storage.alerts_data.size_mb} MB`}</span>
+                  <div className="alert-data-item">
+                    <span className="data-value">{storage.alerts_data.snapshots}</span>
+                    <span className="data-label">Snapshots</span>
+                  </div>
+                  <div className="alert-data-item">
+                    <span className="data-value">{storage.alerts_data.videos}</span>
+                    <span className="data-label">Videos</span>
+                  </div>
+                  <div className="alert-data-item">
+                    <span className="data-value">{storage.alerts_data.size_mb > 1000 ? storage.alerts_data.size_gb.toFixed(1) : storage.alerts_data.size_mb.toFixed(0)}</span>
+                    <span className="data-label">{storage.alerts_data.size_mb > 1000 ? 'GB' : 'MB'}</span>
+                  </div>
                 </div>
               </div>
             </div>

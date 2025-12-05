@@ -1010,7 +1010,7 @@ body {
 .storage-section {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .storage-warning {
@@ -1042,7 +1042,7 @@ body {
 
 .storage-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 1rem;
 }
 
@@ -1061,11 +1061,11 @@ body {
 }
 
 .storage-bar {
-  height: 8px;
+  height: 10px;
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  border-radius: 5px;
   overflow: hidden;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .storage-bar-fill {
@@ -1089,9 +1089,75 @@ body {
   color: var(--text-secondary);
 }
 
+/* Disk usage breakdown grid */
+.disk-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.disk-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.disk-item .disk-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.disk-item .disk-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.disk-item.total .disk-value {
+  color: var(--primary);
+}
+
+.disk-item.used .disk-value {
+  color: #f59e0b;
+}
+
+.disk-item.free .disk-value {
+  color: #10b981;
+}
+
+/* Alert data grid */
 .storage-stat-details.alerts-data {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.5rem;
+  text-align: center;
+}
+
+.alert-data-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 0.375rem;
+}
+
+.alert-data-item .data-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.alert-data-item .data-label {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
 }
 
 .text-warning {
@@ -1102,8 +1168,11 @@ body {
 .cleanup-controls {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 1rem;
-  padding-top: 0.5rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 0.5rem;
 }
 
 .cleanup-input {
@@ -1124,6 +1193,26 @@ body {
   border-radius: 0.375rem;
   color: var(--text);
   font-size: 0.875rem;
+}
+
+/* Responsive storage */
+@media (max-width: 600px) {
+  .storage-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .disk-breakdown {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .storage-stat-details.alerts-data {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .cleanup-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 .btn-danger {
