@@ -93,7 +93,7 @@ async def mjpeg_stream(request: Request):
 
 @router.websocket("/ws")
 async def websocket_stream(websocket: WebSocket, request: Request = None):
-    """WebSocket stream for React frontend with low latency."""
+    """WebSocket stream for React frontend with low latency (includes overlays)."""
     await websocket.accept()
     stream = websocket.app.state.stream
 
@@ -120,3 +120,64 @@ async def websocket_stream(websocket: WebSocket, request: Request = None):
         pass
     finally:
         stream.unsubscribe(queue)
+
+
+@router.websocket("/ws/raw")
+async def websocket_raw_stream(websocket: WebSocket, request: Request = None):
+    """
+    Raw WebSocket stream WITHOUT overlays/bounding boxes.
+    Used for enrollment preview - shows clean camera feed.
+    """
+    await websocket.accept()
+    stream = websocket.app.state.stream
+
+    if not stream.is_running:
+        stream.start()
+
+    try:
+        while True:
+            try:
+                # Get raw frame directly (no subscription needed - just latest frame)
+                await asyncio.sleep(0.033)  # ~30 FPS
+                frame_data = stream.get_latest_raw_frame()
+                if frame_data and frame_data.frame is not None:
+                    jpeg = stream.encode_jpeg(frame_data.frame, quality=70)
+                    await websocket.send_bytes(jpeg)
+            except asyncio.TimeoutError:
+                continue
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+
+@router.get("/mjpeg/raw")
+async def mjpeg_raw_stream(request: Request):
+    """
+    Raw MJPEG stream WITHOUT overlays/bounding boxes.
+    Used for enrollment preview in browsers that don't support WebSocket well.
+    """
+    stream = request.app.state.stream
+
+    if not stream.is_running:
+        stream.start()
+
+    async def generate():
+        while True:
+            try:
+                await asyncio.sleep(0.033)  # ~30 FPS
+                frame_data = stream.get_latest_raw_frame()
+                if frame_data and frame_data.frame is not None:
+                    jpeg = stream.encode_jpeg(frame_data.frame, quality=70)
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                    )
+            except Exception:
+                break
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )

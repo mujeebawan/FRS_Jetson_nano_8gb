@@ -402,7 +402,7 @@ export function PersonList() {
                     <img
                       key={streamKey}
                       ref={streamRef}
-                      src={`${streamApi.getMjpegUrl()}?t=${streamKey}`}
+                      src={`${streamApi.getRawMjpegUrl()}?t=${streamKey}`}
                       alt="Camera Preview"
                       className="camera-stream"
                     />

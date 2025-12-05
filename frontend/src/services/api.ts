@@ -17,6 +17,9 @@ export const streamApi = {
   getBaseUrl: () => API_BASE_URL,
   getMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg`,
   getWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws`,
+  // Raw stream (no overlays/bounding boxes) for enrollment
+  getRawMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg/raw`,
+  getRawWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws/raw`,
 };
 
 // Persons API
