@@ -52,6 +52,8 @@ data/models/*.pth
 data/embeddings/*.pkl
 data/images/
 data/snapshots/
+data/alerts/
+data/clips/
 *.db
 *.sqlite3
 
