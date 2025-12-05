@@ -112,27 +112,35 @@ async def storage_status():
     import shutil
     from pathlib import Path
 
-    alerts_dir = Path(settings.alerts_data_dir)
-    alerts_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = Path(settings.alerts_data_dir).parent  # data/ folder
+    data_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get disk usage for the partition containing alerts
-    total, used, free = shutil.disk_usage(alerts_dir)
+    # Get disk usage for the partition containing data
+    total, used, free = shutil.disk_usage(data_dir)
 
-    # Calculate alerts folder size
+    # Calculate alerts folder size - check all possible locations
     alerts_size = 0
     alerts_count = {"snapshots": 0, "videos": 0, "folders": 0}
 
-    if alerts_dir.exists():
-        for date_folder in alerts_dir.iterdir():
-            if date_folder.is_dir():
-                alerts_count["folders"] += 1
-                for file in date_folder.iterdir():
-                    if file.is_file():
-                        alerts_size += file.stat().st_size
-                        if file.suffix == ".jpg":
-                            alerts_count["snapshots"] += 1
-                        elif file.suffix == ".mp4":
-                            alerts_count["videos"] += 1
+    # Check multiple folders: alerts/, snapshots/, clips/
+    folders_to_check = [
+        data_dir / "alerts",
+        data_dir / "snapshots",
+        data_dir / "clips"
+    ]
+
+    for folder in folders_to_check:
+        if folder.exists():
+            for date_folder in folder.iterdir():
+                if date_folder.is_dir():
+                    alerts_count["folders"] += 1
+                    for file in date_folder.iterdir():
+                        if file.is_file():
+                            alerts_size += file.stat().st_size
+                            if file.suffix == ".jpg":
+                                alerts_count["snapshots"] += 1
+                            elif file.suffix in [".mp4", ".avi"]:
+                                alerts_count["videos"] += 1
 
     # Calculate percentages
     disk_percent = (used / total) * 100
@@ -173,7 +181,7 @@ async def cleanup_old_data(days: int = 30):
     from pathlib import Path
     from datetime import datetime, timedelta
 
-    alerts_dir = Path(settings.alerts_data_dir)
+    data_dir = Path(settings.alerts_data_dir).parent  # data/ folder
     cutoff = datetime.now() - timedelta(days=days)
 
     deleted = {
@@ -183,27 +191,35 @@ async def cleanup_old_data(days: int = 30):
         "size_mb": 0
     }
 
-    if not alerts_dir.exists():
-        return {"success": True, "deleted": deleted, "message": "No data to clean"}
+    # Check multiple folders: alerts/, snapshots/, clips/
+    folders_to_check = [
+        data_dir / "alerts",
+        data_dir / "snapshots",
+        data_dir / "clips"
+    ]
 
-    for date_folder in list(alerts_dir.iterdir()):
-        if date_folder.is_dir():
-            try:
-                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
-                if folder_date < cutoff:
-                    # Count files before deleting
-                    for file in date_folder.iterdir():
-                        if file.is_file():
-                            deleted["size_mb"] += file.stat().st_size / (1024**2)
-                            if file.suffix == ".jpg":
-                                deleted["snapshots"] += 1
-                            elif file.suffix == ".mp4":
-                                deleted["videos"] += 1
+    for folder in folders_to_check:
+        if not folder.exists():
+            continue
 
-                    shutil.rmtree(date_folder)
-                    deleted["folders"] += 1
-            except ValueError:
-                pass  # Skip non-date folders
+        for date_folder in list(folder.iterdir()):
+            if date_folder.is_dir():
+                try:
+                    folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
+                    if folder_date < cutoff:
+                        # Count files before deleting
+                        for file in date_folder.iterdir():
+                            if file.is_file():
+                                deleted["size_mb"] += file.stat().st_size / (1024**2)
+                                if file.suffix == ".jpg":
+                                    deleted["snapshots"] += 1
+                                elif file.suffix in [".mp4", ".avi"]:
+                                    deleted["videos"] += 1
+
+                        shutil.rmtree(date_folder)
+                        deleted["folders"] += 1
+                except ValueError:
+                    pass  # Skip non-date folders
 
     deleted["size_mb"] = round(deleted["size_mb"], 2)
 
