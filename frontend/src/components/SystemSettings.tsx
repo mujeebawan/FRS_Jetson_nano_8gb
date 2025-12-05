@@ -11,7 +11,11 @@ import {
   Activity,
   Eye,
   Layers,
-  RefreshCw
+  RefreshCw,
+  Video,
+  Trash2,
+  AlertTriangle,
+  Database
 } from 'lucide-react';
 
 interface ResourceStats {
@@ -50,12 +54,34 @@ interface SettingsData {
   alert_cooldown_seconds: number;
   detection_model: string;
   recognition_model: string;
+  video_recording_enabled: boolean;
+  video_clip_duration: number;
   ranges: {
     detection_confidence: { min: number; max: number; step: number; default: number };
     recognition_threshold: { min: number; max: number; step: number; default: number };
     frame_skip: { min: number; max: number; step: number; default: number };
     alert_cooldown_seconds: { min: number; max: number; step: number; default: number };
+    video_clip_duration: { min: number; max: number; step: number; default: number };
   };
+}
+
+interface StorageData {
+  disk: {
+    total_gb: number;
+    used_gb: number;
+    free_gb: number;
+    percent_used: number;
+  };
+  alerts_data: {
+    size_mb: number;
+    size_gb: number;
+    snapshots: number;
+    videos: number;
+    date_folders: number;
+  };
+  warning: boolean;
+  warning_threshold: number;
+  message: string | null;
 }
 
 interface ModelPack {
@@ -99,6 +125,12 @@ export function SystemSettings() {
   const [changingModel, setChangingModel] = useState(false);
   const [modelMessage, setModelMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // State for storage
+  const [storage, setStorage] = useState<StorageData | null>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
+  const [cleanupDays, setCleanupDays] = useState(30);
+  const [storageMessage, setStorageMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Load resources periodically
   const loadResources = useCallback(async () => {
     try {
@@ -136,19 +168,66 @@ export function SystemSettings() {
     }
   }, []);
 
+  // Load storage
+  const loadStorage = useCallback(async () => {
+    try {
+      const response = await systemApi.storage();
+      setStorage(response.data);
+    } catch (err) {
+      console.error('Storage load error:', err);
+    }
+  }, []);
+
+  // Cleanup old data
+  const handleCleanup = async () => {
+    if (!window.confirm(`Delete all alert data older than ${cleanupDays} days? This cannot be undone.`)) {
+      return;
+    }
+
+    setCleaningUp(true);
+    setStorageMessage(null);
+
+    try {
+      const response = await systemApi.cleanupStorage(cleanupDays);
+      if (response.data.success) {
+        setStorageMessage({
+          type: 'success',
+          text: response.data.message
+        });
+        // Reload storage stats
+        await loadStorage();
+      } else {
+        setStorageMessage({
+          type: 'error',
+          text: 'Failed to cleanup storage'
+        });
+      }
+    } catch (err) {
+      setStorageMessage({ type: 'error', text: 'Failed to cleanup storage' });
+      console.error('Cleanup error:', err);
+    } finally {
+      setCleaningUp(false);
+      setTimeout(() => setStorageMessage(null), 5000);
+    }
+  };
+
   // Initial load
   useEffect(() => {
     loadResources();
     loadSettings();
     loadModels();
+    loadStorage();
 
     // Refresh resources every 2 seconds
     const resourceInterval = setInterval(loadResources, 2000);
+    // Refresh storage every 30 seconds
+    const storageInterval = setInterval(loadStorage, 30000);
 
     return () => {
       clearInterval(resourceInterval);
+      clearInterval(storageInterval);
     };
-  }, [loadResources, loadSettings, loadModels]);
+  }, [loadResources, loadSettings, loadModels, loadStorage]);
 
   // Handle setting change
   const handleSettingChange = (key: keyof SettingsData, value: number | boolean) => {
@@ -180,6 +259,8 @@ export function SystemSettings() {
         frame_skip: pendingSettings.frame_skip,
         enable_motion_trigger: pendingSettings.enable_motion_trigger,
         alert_cooldown_seconds: pendingSettings.alert_cooldown_seconds,
+        video_recording_enabled: pendingSettings.video_recording_enabled,
+        video_clip_duration: pendingSettings.video_clip_duration,
       });
 
       if (response.data.success) {
@@ -490,6 +571,148 @@ export function SystemSettings() {
             </div>
           </div>
         ) : null}
+      </section>
+
+      {/* Video Recording Settings */}
+      <section className="settings-section">
+        <h3>
+          <Video size={20} />
+          Video Recording
+        </h3>
+
+        {settings && (
+          <div className="settings-form">
+            {/* Video Recording Toggle */}
+            <div className="setting-row">
+              <div className="setting-label">
+                <span>Record Video Clips</span>
+                <span className="setting-hint">Save video footage around each alert</span>
+              </div>
+              <div className="setting-control">
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={getCurrentValue('video_recording_enabled') ?? settings.video_recording_enabled}
+                    onChange={(e) => handleSettingChange('video_recording_enabled', e.target.checked)}
+                  />
+                  <span className="toggle-slider"></span>
+                </label>
+                <span className="setting-value">
+                  {(getCurrentValue('video_recording_enabled') ?? settings.video_recording_enabled) ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+            </div>
+
+            {/* Video Clip Duration */}
+            {(getCurrentValue('video_recording_enabled') ?? settings.video_recording_enabled) && (
+              <div className="setting-row">
+                <div className="setting-label">
+                  <span>Clip Duration</span>
+                  <span className="setting-hint">Seconds before and after alert to record (3-10)</span>
+                </div>
+                <div className="setting-control">
+                  <input
+                    type="range"
+                    min={settings.ranges.video_clip_duration?.min || 3}
+                    max={settings.ranges.video_clip_duration?.max || 10}
+                    step={settings.ranges.video_clip_duration?.step || 1}
+                    value={getCurrentValue('video_clip_duration') || settings.video_clip_duration}
+                    onChange={(e) => handleSettingChange('video_clip_duration', parseInt(e.target.value))}
+                  />
+                  <span className="setting-value">
+                    {getCurrentValue('video_clip_duration') || settings.video_clip_duration}s before + after
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* Storage Management */}
+      <section className="settings-section">
+        <h3>
+          <Database size={20} />
+          Storage Management
+          <button className="refresh-btn" onClick={loadStorage} title="Refresh">
+            <RefreshCw size={16} />
+          </button>
+        </h3>
+
+        {storage && (
+          <div className="storage-section">
+            {/* Storage Warning */}
+            {storage.warning && (
+              <div className="storage-warning">
+                <AlertTriangle size={20} />
+                <div>
+                  <strong>Storage Warning!</strong>
+                  <p>{storage.message}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Disk Usage */}
+            <div className="storage-stats">
+              <div className="storage-stat">
+                <div className="storage-stat-header">
+                  <HardDrive size={18} />
+                  <span>Disk Usage</span>
+                </div>
+                <div className="storage-bar">
+                  <div
+                    className={`storage-bar-fill ${storage.disk.percent_used >= 70 ? 'warning' : ''} ${storage.disk.percent_used >= 90 ? 'critical' : ''}`}
+                    style={{ width: `${storage.disk.percent_used}%` }}
+                  />
+                </div>
+                <div className="storage-stat-details">
+                  <span>{storage.disk.used_gb} GB / {storage.disk.total_gb} GB</span>
+                  <span className={storage.disk.percent_used >= 70 ? 'text-warning' : ''}>{storage.disk.percent_used}%</span>
+                </div>
+              </div>
+
+              <div className="storage-stat">
+                <div className="storage-stat-header">
+                  <Video size={18} />
+                  <span>Alert Data</span>
+                </div>
+                <div className="storage-stat-details alerts-data">
+                  <span>{storage.alerts_data.snapshots} snapshots</span>
+                  <span>{storage.alerts_data.videos} videos</span>
+                  <span>{storage.alerts_data.size_mb > 1000 ? `${storage.alerts_data.size_gb} GB` : `${storage.alerts_data.size_mb} MB`}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Cleanup Controls */}
+            <div className="cleanup-controls">
+              <div className="cleanup-input">
+                <label>Delete data older than:</label>
+                <select value={cleanupDays} onChange={(e) => setCleanupDays(parseInt(e.target.value))}>
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={60}>60 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+              </div>
+              <button
+                className="btn btn-danger"
+                onClick={handleCleanup}
+                disabled={cleaningUp}
+              >
+                <Trash2 size={16} />
+                {cleaningUp ? 'Cleaning...' : 'Cleanup Old Data'}
+              </button>
+            </div>
+
+            {storageMessage && (
+              <div className={`save-message ${storageMessage.type}`}>
+                {storageMessage.text}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Model Selection */}

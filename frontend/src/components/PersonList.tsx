@@ -408,7 +408,7 @@ export function PersonList() {
                     />
                     <div className="face-guide">
                       <div className="face-oval"></div>
-                      <span>Position face within the oval</span>
+                      <span>Face can be anywhere in frame</span>
                     </div>
                     <button className="stream-refresh-btn" onClick={refreshStream} title="Refresh stream">
                       <RefreshCw size={18} />

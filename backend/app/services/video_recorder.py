@@ -189,24 +189,35 @@ class VideoRecorder:
             date_folder = self.clips_dir / date_str
             date_folder.mkdir(parents=True, exist_ok=True)
 
-            # Generate filename
+            # Generate filename with video_ prefix for clarity
             time_str = datetime.now().strftime("%H%M%S")
-            filename = f"alert_{alert_id}_{time_str}.mp4"
+            filename = f"video_alert_{alert_id}_{time_str}.mp4"
             filepath = date_folder / filename
 
-            # Try hardware-accelerated encoder first (Jetson)
-            # Fallback to software encoder if not available
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            # Save as AVI first (fast, reliable), then convert to MP4 H.264
+            temp_filepath = filepath.with_suffix('.avi')
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')  # XVID is widely supported
 
             writer = cv2.VideoWriter(
-                str(filepath),
+                str(temp_filepath),
                 fourcc,
                 self.fps,
                 self._frame_size
             )
 
             if not writer.isOpened():
-                logger.error(f"Failed to open video writer for {filepath}")
+                # Fallback to MJPG
+                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+                temp_filepath = filepath.with_suffix('.avi')
+                writer = cv2.VideoWriter(
+                    str(temp_filepath),
+                    fourcc,
+                    self.fps,
+                    self._frame_size
+                )
+
+            if not writer.isOpened():
+                logger.error(f"Failed to open video writer for {temp_filepath}")
                 return None
 
             # Write frames
@@ -223,6 +234,38 @@ class VideoRecorder:
                     frames_written += 1
 
             writer.release()
+
+            # Convert AVI to MP4 H.264 for browser compatibility using ffmpeg
+            try:
+                import subprocess
+                # Use ffmpeg to convert to H.264 MP4 (browser compatible)
+                # -y = overwrite, -loglevel error = quiet
+                cmd = [
+                    'ffmpeg', '-y', '-loglevel', 'error',
+                    '-i', str(temp_filepath),
+                    '-c:v', 'libx264',  # H.264 codec
+                    '-preset', 'fast',  # Fast encoding
+                    '-crf', '28',  # Quality (lower = better, 23-28 is good)
+                    '-movflags', '+faststart',  # Web streaming optimization
+                    str(filepath)
+                ]
+                result = subprocess.run(cmd, capture_output=True, timeout=60)
+
+                if result.returncode == 0 and filepath.exists():
+                    # Remove temp AVI file
+                    temp_filepath.unlink()
+                    logger.info(f"Converted to H.264 MP4: {filepath}")
+                else:
+                    # If conversion failed, rename AVI to MP4 (some players handle it)
+                    logger.warning(f"ffmpeg conversion failed, keeping AVI as: {temp_filepath}")
+                    filepath = temp_filepath  # Use AVI path
+
+            except FileNotFoundError:
+                logger.warning("ffmpeg not found, keeping AVI format")
+                filepath = temp_filepath
+            except Exception as conv_err:
+                logger.warning(f"Video conversion error: {conv_err}, keeping AVI")
+                filepath = temp_filepath
 
             self._clips_saved += 1
             duration = len(frames) / self.fps
@@ -244,10 +287,19 @@ class VideoRecorder:
         Returns:
             Path to clip file if found
         """
-        # Search in all date folders
+        # Search in all date folders (newest first)
         for date_folder in sorted(self.clips_dir.iterdir(), reverse=True):
             if date_folder.is_dir():
+                # Try MP4 first (browser compatible)
+                for clip in date_folder.glob(f"video_alert_{alert_id}_*.mp4"):
+                    return clip
+                # Fallback to AVI if MP4 conversion failed
+                for clip in date_folder.glob(f"video_alert_{alert_id}_*.avi"):
+                    return clip
+                # Old naming conventions
                 for clip in date_folder.glob(f"alert_{alert_id}_*.mp4"):
+                    return clip
+                for clip in date_folder.glob(f"alert_{alert_id}_*.avi"):
                     return clip
         return None
 

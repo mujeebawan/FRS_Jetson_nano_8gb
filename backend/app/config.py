@@ -102,7 +102,13 @@ class Settings(BaseSettings):
 
     @property
     def snapshots_dir(self) -> str:
-        return str(self._project_root / "data" / "snapshots")
+        """Alert snapshots directory - now unified under alerts folder."""
+        return str(self._project_root / "data" / "alerts")
+
+    @property
+    def alerts_data_dir(self) -> str:
+        """Unified alerts data directory for snapshots and video clips."""
+        return str(self._project_root / "data" / "alerts")
 
     # Alert Settings (with persistent defaults)
     alert_cooldown_seconds: int = _persisted.get("alert_cooldown_seconds", 10)
@@ -116,7 +122,8 @@ class Settings(BaseSettings):
 
     @property
     def clips_dir(self) -> str:
-        return str(self._project_root / "data" / "clips")
+        """Video clips directory - unified under alerts folder."""
+        return str(self._project_root / "data" / "alerts")
 
     # Reference images directory (enrolled person photos)
     @property

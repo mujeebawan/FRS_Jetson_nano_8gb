@@ -97,6 +97,9 @@ export const systemApi = {
   cameraInfo: () => api.get('/system/camera/info'),
   // Resource monitoring
   resources: () => api.get('/system/resources'),
+  // Storage monitoring
+  storage: () => api.get('/system/storage'),
+  cleanupStorage: (days: number = 30) => api.post('/system/storage/cleanup', null, { params: { days } }),
   // Settings
   getSettings: () => api.get('/system/settings'),
   updateSettings: (settings: {

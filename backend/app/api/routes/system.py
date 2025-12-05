@@ -103,6 +103,117 @@ async def system_resources():
     return monitor.get_stats()
 
 
+@router.get("/storage")
+async def storage_status():
+    """
+    Get storage usage for alerts data (snapshots + videos).
+    Returns usage stats and warning if above 70% threshold.
+    """
+    import shutil
+    from pathlib import Path
+
+    alerts_dir = Path(settings.alerts_data_dir)
+    alerts_dir.mkdir(parents=True, exist_ok=True)
+
+    # Get disk usage for the partition containing alerts
+    total, used, free = shutil.disk_usage(alerts_dir)
+
+    # Calculate alerts folder size
+    alerts_size = 0
+    alerts_count = {"snapshots": 0, "videos": 0, "folders": 0}
+
+    if alerts_dir.exists():
+        for date_folder in alerts_dir.iterdir():
+            if date_folder.is_dir():
+                alerts_count["folders"] += 1
+                for file in date_folder.iterdir():
+                    if file.is_file():
+                        alerts_size += file.stat().st_size
+                        if file.suffix == ".jpg":
+                            alerts_count["snapshots"] += 1
+                        elif file.suffix == ".mp4":
+                            alerts_count["videos"] += 1
+
+    # Calculate percentages
+    disk_percent = (used / total) * 100
+    warning = disk_percent >= 70
+
+    return {
+        "disk": {
+            "total_gb": round(total / (1024**3), 2),
+            "used_gb": round(used / (1024**3), 2),
+            "free_gb": round(free / (1024**3), 2),
+            "percent_used": round(disk_percent, 1),
+        },
+        "alerts_data": {
+            "size_mb": round(alerts_size / (1024**2), 2),
+            "size_gb": round(alerts_size / (1024**3), 3),
+            "snapshots": alerts_count["snapshots"],
+            "videos": alerts_count["videos"],
+            "date_folders": alerts_count["folders"],
+        },
+        "warning": warning,
+        "warning_threshold": 70,
+        "message": "Storage above 70%! Consider cleaning up old alerts." if warning else None
+    }
+
+
+@router.post("/storage/cleanup")
+async def cleanup_old_data(days: int = 30):
+    """
+    Delete alert data older than specified days.
+
+    Args:
+        days: Delete data older than this many days (default: 30)
+
+    Returns:
+        Summary of deleted data
+    """
+    import shutil
+    from pathlib import Path
+    from datetime import datetime, timedelta
+
+    alerts_dir = Path(settings.alerts_data_dir)
+    cutoff = datetime.now() - timedelta(days=days)
+
+    deleted = {
+        "folders": 0,
+        "snapshots": 0,
+        "videos": 0,
+        "size_mb": 0
+    }
+
+    if not alerts_dir.exists():
+        return {"success": True, "deleted": deleted, "message": "No data to clean"}
+
+    for date_folder in list(alerts_dir.iterdir()):
+        if date_folder.is_dir():
+            try:
+                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
+                if folder_date < cutoff:
+                    # Count files before deleting
+                    for file in date_folder.iterdir():
+                        if file.is_file():
+                            deleted["size_mb"] += file.stat().st_size / (1024**2)
+                            if file.suffix == ".jpg":
+                                deleted["snapshots"] += 1
+                            elif file.suffix == ".mp4":
+                                deleted["videos"] += 1
+
+                    shutil.rmtree(date_folder)
+                    deleted["folders"] += 1
+            except ValueError:
+                pass  # Skip non-date folders
+
+    deleted["size_mb"] = round(deleted["size_mb"], 2)
+
+    return {
+        "success": True,
+        "deleted": deleted,
+        "message": f"Deleted {deleted['folders']} folders ({deleted['size_mb']} MB) older than {days} days"
+    }
+
+
 @router.get("/models")
 async def available_models(request: Request):
     """Get available model packs and current selection."""
