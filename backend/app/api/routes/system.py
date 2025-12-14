@@ -1,11 +1,13 @@
 """System API routes with resource monitoring and settings management."""
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from pydantic import BaseModel
 from typing import Optional
 from ...config import settings
 from ...services.system_monitor import get_system_monitor
 from ...services.settings_store import get_settings_store
+from ...models import User
+from ..deps import get_current_active_user, require_admin
 
 router = APIRouter()
 
@@ -50,7 +52,10 @@ AVAILABLE_MODELS = {
 
 
 @router.get("/status")
-async def system_status(request: Request):
+async def system_status(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """Get system status including resource utilization."""
     stream = request.app.state.stream
     detector = request.app.state.detector
@@ -97,14 +102,18 @@ async def system_status(request: Request):
 
 
 @router.get("/resources")
-async def system_resources():
+async def system_resources(
+    current_user: User = Depends(get_current_active_user)
+):
     """Get real-time system resource utilization (CPU, GPU, RAM, temperature)."""
     monitor = get_system_monitor()
     return monitor.get_stats()
 
 
 @router.get("/storage")
-async def storage_status():
+async def storage_status(
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Get storage usage for alerts data (snapshots + videos).
     Returns usage stats and warning if above 70% threshold.
@@ -167,9 +176,12 @@ async def storage_status():
 
 
 @router.post("/storage/cleanup")
-async def cleanup_old_data(days: int = 30):
+async def cleanup_old_data(
+    days: int = 30,
+    admin_user: User = Depends(require_admin)
+):
     """
-    Delete alert data older than specified days.
+    Delete alert data older than specified days (admin only).
 
     Args:
         days: Delete data older than this many days (default: 30)
@@ -231,8 +243,11 @@ async def cleanup_old_data(days: int = 30):
 
 
 @router.get("/models")
-async def available_models(request: Request):
-    """Get available model packs and current selection."""
+async def available_models(
+    request: Request,
+    admin_user: User = Depends(require_admin)
+):
+    """Get available model packs and current selection (admin only)."""
     import os
 
     detector = request.app.state.detector
@@ -264,8 +279,11 @@ async def available_models(request: Request):
 
 
 @router.get("/camera/info")
-async def camera_info(request: Request):
-    """Get detailed camera information."""
+async def camera_info(
+    request: Request,
+    admin_user: User = Depends(require_admin)
+):
+    """Get detailed camera information (admin only)."""
     camera = request.app.state.camera
     info = await camera.get_device_info()
 
@@ -300,7 +318,8 @@ async def update_settings(
     enable_motion_trigger: bool = None,
     alert_cooldown_seconds: int = None,
     video_recording_enabled: bool = None,
-    video_clip_duration: int = None
+    video_clip_duration: int = None,
+    admin_user: User = Depends(require_admin)
 ):
     """
     Update runtime settings.
@@ -445,8 +464,11 @@ async def update_settings(
 
 
 @router.get("/settings")
-async def get_current_settings(request: Request):
-    """Get current runtime settings."""
+async def get_current_settings(
+    request: Request,
+    admin_user: User = Depends(require_admin)
+):
+    """Get current runtime settings (admin only)."""
     detector = request.app.state.detector
     recognizer = request.app.state.recognizer
     stream = request.app.state.stream
@@ -476,7 +498,8 @@ async def get_current_settings(request: Request):
 async def camera_zoom(
     request: Request,
     action: str = "stop",
-    speed: int = 50
+    speed: int = 50,
+    admin_user: User = Depends(require_admin)
 ):
     """
     Control camera optical zoom.
@@ -491,7 +514,11 @@ async def camera_zoom(
 
 
 @router.post("/camera/zoom/set")
-async def camera_zoom_set(request: Request, level: int = 0):
+async def camera_zoom_set(
+    request: Request,
+    level: int = 0,
+    admin_user: User = Depends(require_admin)
+):
     """
     Set absolute zoom level.
 
@@ -504,8 +531,11 @@ async def camera_zoom_set(request: Request, level: int = 0):
 
 
 @router.get("/camera/ptz/status")
-async def camera_ptz_status(request: Request):
-    """Get current PTZ status including zoom level."""
+async def camera_ptz_status(
+    request: Request,
+    admin_user: User = Depends(require_admin)
+):
+    """Get current PTZ status including zoom level (admin only)."""
     camera = request.app.state.camera
     status = await camera.get_ptz_status()
     return status
@@ -515,7 +545,8 @@ async def camera_ptz_status(request: Request):
 async def change_model(
     request: Request,
     model: str = "buffalo_s",
-    use_fp16: bool = True
+    use_fp16: bool = True,
+    admin_user: User = Depends(require_admin)
 ):
     """
     Change the face detection/recognition model pack.

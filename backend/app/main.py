@@ -31,8 +31,16 @@ async def lifespan(app: FastAPI):
 
     # Initialize database tables
     from .models.database import init_db, get_db, Person
+    from .core.seed import run_seed
     init_db()
     logger.info("Database tables initialized")
+
+    # Seed admin user
+    db = next(get_db())
+    try:
+        run_seed(db)
+    finally:
+        db.close()
 
     # Initialize services
     from .services.camera import CameraService

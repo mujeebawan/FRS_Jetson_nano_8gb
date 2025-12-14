@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom"
+import { NavLink, useLocation, useNavigate } from "react-router-dom"
 import {
   LayoutDashboard,
   Users,
@@ -9,6 +9,8 @@ import {
   Shield,
   Activity,
   Camera,
+  LogOut,
+  User,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -20,6 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface AppSidebarProps {
   collapsed: boolean
@@ -30,10 +33,10 @@ interface AppSidebarProps {
 }
 
 const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Persons", href: "/persons", icon: Users },
-  { name: "Alerts", href: "/alerts", icon: Bell },
-  { name: "Settings", href: "/settings", icon: Settings },
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, adminOnly: false },
+  { name: "Persons", href: "/persons", icon: Users, adminOnly: false },
+  { name: "Alerts", href: "/alerts", icon: Bell, adminOnly: false },
+  { name: "Settings", href: "/settings", icon: Settings, adminOnly: true },
 ]
 
 export function AppSidebar({
@@ -44,6 +47,18 @@ export function AppSidebar({
   cameraStatus = "disconnected",
 }: AppSidebarProps) {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user, isAdmin, logout } = useAuth()
+
+  const handleLogout = () => {
+    logout()
+    navigate("/login")
+  }
+
+  // Filter navigation items based on user role
+  const filteredNavigation = navigation.filter(
+    (item) => !item.adminOnly || isAdmin
+  )
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -95,7 +110,7 @@ export function AppSidebar({
       {/* Navigation */}
       <ScrollArea className="flex-1 py-4">
         <nav className="space-y-1 px-2">
-          {navigation.map((item) => {
+          {filteredNavigation.map((item) => {
             const isActive = location.pathname.startsWith(item.href)
             const Icon = item.icon
             const showBadge = item.name === "Alerts" && alertCount > 0
@@ -156,43 +171,73 @@ export function AppSidebar({
         </nav>
       </ScrollArea>
 
-      {/* Footer with Status */}
+      {/* Footer with User Info and Logout */}
       <div className="border-t p-3">
         {!collapsed ? (
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between text-sidebar-foreground">
-              <span className="flex items-center gap-2">
-                <Activity className="h-3.5 w-3.5" />
-                Stream
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    "h-2 w-2 rounded-full",
-                    getStatusColor(streamStatus)
-                  )}
-                />
-                <span className="capitalize">{streamStatus}</span>
-              </span>
+          <div className="space-y-3">
+            {/* Status indicators */}
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between text-sidebar-foreground">
+                <span className="flex items-center gap-2">
+                  <Activity className="h-3.5 w-3.5" />
+                  Stream
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "h-2 w-2 rounded-full",
+                      getStatusColor(streamStatus)
+                    )}
+                  />
+                  <span className="capitalize">{streamStatus}</span>
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sidebar-foreground">
+                <span className="flex items-center gap-2">
+                  <Camera className="h-3.5 w-3.5" />
+                  Camera
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "h-2 w-2 rounded-full",
+                      getStatusColor(cameraStatus)
+                    )}
+                  />
+                  <span className="capitalize">{cameraStatus}</span>
+                </span>
+              </div>
             </div>
-            <div className="flex items-center justify-between text-sidebar-foreground">
-              <span className="flex items-center gap-2">
-                <Camera className="h-3.5 w-3.5" />
-                Camera
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    "h-2 w-2 rounded-full",
-                    getStatusColor(cameraStatus)
-                  )}
-                />
-                <span className="capitalize">{cameraStatus}</span>
-              </span>
+
+            {/* User info and logout */}
+            <div className="border-t pt-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium text-sidebar-foreground">
+                      {user?.username}
+                    </p>
+                    <p className="text-xs text-muted-foreground capitalize">
+                      {user?.role}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleLogout}
+                  title="Logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2">
+            {/* Status dots */}
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
                 <div className="flex items-center gap-1">
@@ -214,6 +259,26 @@ export function AppSidebar({
                 <div className="space-y-1 text-xs">
                   <div>Stream: {streamStatus}</div>
                   <div>Camera: {cameraStatus}</div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+
+            {/* User and logout icons */}
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <div className="text-xs">
+                  <div>{user?.username} ({user?.role})</div>
+                  <div className="text-muted-foreground">Click to logout</div>
                 </div>
               </TooltipContent>
             </Tooltip>

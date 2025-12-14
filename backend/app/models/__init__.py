@@ -12,6 +12,7 @@ from .database import (
     engine,
     SessionLocal
 )
+from .user import User, UserRole
 
 __all__ = [
     "Base",
@@ -23,5 +24,7 @@ __all__ = [
     "get_db",
     "init_db",
     "engine",
-    "SessionLocal"
+    "SessionLocal",
+    "User",
+    "UserRole"
 ]

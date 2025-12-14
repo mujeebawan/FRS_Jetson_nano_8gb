@@ -8,6 +8,7 @@ import {
   StorageSettings,
   CameraSettings,
 } from "@/components/settings"
+import { UserManagement } from "@/components/settings/UserManagement"
 import api from "@/services/api"
 
 interface Settings {
@@ -92,11 +93,12 @@ export function SettingsPage() {
 
       {/* Settings Tabs */}
       <Tabs defaultValue="detection" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="detection">Detection</TabsTrigger>
           <TabsTrigger value="recognition">Recognition</TabsTrigger>
           <TabsTrigger value="camera">Camera</TabsTrigger>
           <TabsTrigger value="storage">Storage</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
         </TabsList>
 
         <TabsContent value="detection">
@@ -128,6 +130,10 @@ export function SettingsPage() {
 
         <TabsContent value="storage">
           <StorageSettings />
+        </TabsContent>
+
+        <TabsContent value="users">
+          <UserManagement />
         </TabsContent>
       </Tabs>
     </div>

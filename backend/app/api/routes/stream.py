@@ -1,29 +1,42 @@
 """Stream API routes"""
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
 from fastapi.responses import StreamingResponse, Response
 import asyncio
+
+from ...models import User
+from ..deps import get_current_active_user, require_admin
+from ...core.security import decode_token
 
 router = APIRouter()
 
 
 @router.get("/start")
-async def start_stream(request: Request):
-    """Start video stream capture."""
+async def start_stream(
+    request: Request,
+    admin_user: User = Depends(require_admin)
+):
+    """Start video stream capture (admin only)."""
     stream = request.app.state.stream
     success = stream.start()
     return {"success": success, "message": "Stream started" if success else "Failed to start"}
 
 
 @router.get("/stop")
-async def stop_stream(request: Request):
-    """Stop video stream capture."""
+async def stop_stream(
+    request: Request,
+    admin_user: User = Depends(require_admin)
+):
+    """Stop video stream capture (admin only)."""
     request.app.state.stream.stop()
     return {"success": True, "message": "Stream stopped"}
 
 
 @router.get("/status")
-async def stream_status(request: Request):
+async def stream_status(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """Get stream status including motion detection stats."""
     stream = request.app.state.stream
     response = {
@@ -42,7 +55,10 @@ async def stream_status(request: Request):
 
 
 @router.get("/snapshot")
-async def get_snapshot(request: Request):
+async def get_snapshot(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """Get a single JPEG snapshot from the current stream (raw, without overlays)."""
     stream = request.app.state.stream
 
@@ -61,8 +77,23 @@ async def get_snapshot(request: Request):
 
 
 @router.get("/mjpeg")
-async def mjpeg_stream(request: Request):
-    """MJPEG stream for direct browser viewing."""
+async def mjpeg_stream(
+    request: Request,
+    token: str = Query(None)
+):
+    """
+    MJPEG stream for direct browser viewing.
+
+    Authentication via query parameter: /api/stream/mjpeg?token=<access_token>
+    """
+    # Verify token
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authentication token")
+
+    token_data = decode_token(token)
+    if not token_data or token_data.token_type != "access":
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+
     stream = request.app.state.stream
 
     if not stream.is_running:
@@ -92,8 +123,22 @@ async def mjpeg_stream(request: Request):
 
 
 @router.websocket("/ws")
-async def websocket_stream(websocket: WebSocket, request: Request = None):
-    """WebSocket stream for React frontend with low latency (includes overlays)."""
+async def websocket_stream(websocket: WebSocket, token: str = Query(None)):
+    """
+    WebSocket stream for React frontend with low latency (includes overlays).
+
+    Authentication via query parameter: ws://host/api/stream/ws?token=<access_token>
+    """
+    # Verify token
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+
+    token_data = decode_token(token)
+    if not token_data or token_data.token_type != "access":
+        await websocket.close(code=4001, reason="Invalid authentication token")
+        return
+
     await websocket.accept()
     stream = websocket.app.state.stream
 
@@ -123,11 +168,23 @@ async def websocket_stream(websocket: WebSocket, request: Request = None):
 
 
 @router.websocket("/ws/raw")
-async def websocket_raw_stream(websocket: WebSocket, request: Request = None):
+async def websocket_raw_stream(websocket: WebSocket, token: str = Query(None)):
     """
     Raw WebSocket stream WITHOUT overlays/bounding boxes.
     Used for enrollment preview - shows clean camera feed.
+
+    Authentication via query parameter: ws://host/api/stream/ws/raw?token=<access_token>
     """
+    # Verify token
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+
+    token_data = decode_token(token)
+    if not token_data or token_data.token_type != "access":
+        await websocket.close(code=4001, reason="Invalid authentication token")
+        return
+
     await websocket.accept()
     stream = websocket.app.state.stream
 
@@ -153,11 +210,24 @@ async def websocket_raw_stream(websocket: WebSocket, request: Request = None):
 
 
 @router.get("/mjpeg/raw")
-async def mjpeg_raw_stream(request: Request):
+async def mjpeg_raw_stream(
+    request: Request,
+    token: str = Query(None)
+):
     """
     Raw MJPEG stream WITHOUT overlays/bounding boxes.
     Used for enrollment preview in browsers that don't support WebSocket well.
+
+    Authentication via query parameter: /api/stream/mjpeg/raw?token=<access_token>
     """
+    # Verify token
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authentication token")
+
+    token_data = decode_token(token)
+    if not token_data or token_data.token_type != "access":
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+
     stream = request.app.state.stream
 
     if not stream.is_running:

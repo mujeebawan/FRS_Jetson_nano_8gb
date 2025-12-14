@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     camera_password: str = "Mujeeb@321"
     camera_rtsp_port: int = 554
 
+    # USB Camera Configuration
+    usb_camera_enabled: bool = _persisted.get("usb_camera_enabled", False)
+    usb_camera_device: str = _persisted.get("usb_camera_device", "/dev/video0")
+    usb_camera_width: int = _persisted.get("usb_camera_width", 1280)
+    usb_camera_height: int = _persisted.get("usb_camera_height", 720)
+    usb_camera_fps: int = _persisted.get("usb_camera_fps", 30)
+
     # Stream URLs (constructed from camera settings)
     @property
     def camera_main_stream(self) -> str:
