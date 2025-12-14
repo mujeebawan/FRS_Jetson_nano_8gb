@@ -1,90 +1,36 @@
-import { useState } from 'react';
-import { LiveStream } from './components/LiveStream';
-import { PersonList } from './components/PersonList';
-import { AlertList } from './components/AlertList';
-import { SystemStatus } from './components/SystemStatus';
-import { SystemSettings } from './components/SystemSettings';
-import { Monitor, Users, Bell, Settings } from 'lucide-react';
-import './App.css';
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 
-type Tab = 'dashboard' | 'persons' | 'alerts' | 'settings';
+import { ThemeProvider } from "@/providers/ThemeProvider"
+import { MainLayout } from "@/components/layout"
+import {
+  DashboardPage,
+  PersonsPage,
+  AlertsPage,
+  SettingsPage,
+} from "@/pages"
 
 function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
-
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Face Recognition Security System</h1>
-        <nav className="nav-tabs">
-          <button
-            className={activeTab === 'dashboard' ? 'active' : ''}
-            onClick={() => setActiveTab('dashboard')}
-          >
-            <Monitor size={18} />
-            Dashboard
-          </button>
-          <button
-            className={activeTab === 'persons' ? 'active' : ''}
-            onClick={() => setActiveTab('persons')}
-          >
-            <Users size={18} />
-            Persons
-          </button>
-          <button
-            className={activeTab === 'alerts' ? 'active' : ''}
-            onClick={() => setActiveTab('alerts')}
-          >
-            <Bell size={18} />
-            Alerts
-          </button>
-          <button
-            className={activeTab === 'settings' ? 'active' : ''}
-            onClick={() => setActiveTab('settings')}
-          >
-            <Settings size={18} />
-            Settings
-          </button>
-        </nav>
-      </header>
-
-      <main className="app-content">
-        {activeTab === 'dashboard' && (
-          <div className="dashboard">
-            <div className="dashboard-main">
-              <LiveStream autoStart={true} />
-            </div>
-            <div className="dashboard-sidebar">
-              <SystemStatus />
-              <AlertList />
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'persons' && (
-          <div className="persons-page">
-            <PersonList />
-          </div>
-        )}
-
-        {activeTab === 'alerts' && (
-          <div className="alerts-page">
-            <AlertList fullPage={true} />
-          </div>
-        )}
-
-        {activeTab === 'settings' && (
-          <div className="settings-page">
-            <SystemSettings />
-          </div>
-        )}
-      </main>
-
-      <footer className="app-footer">
-        <span>Face Recognition Security System - Jetson Orin Nano 8GB</span>
-      </footer>
-    </div>
-  );
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="dark"
+      enableSystem
+      disableTransitionOnChange
+    >
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<MainLayout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="persons" element={<PersonsPage />} />
+            <Route path="alerts" element={<AlertsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
+  )
 }
 
-export default App;
+export default App

@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://192.168.0.245:8000/api';
 
-export const api = axios.create({
+export const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
@@ -11,21 +11,22 @@ export const api = axios.create({
 
 // Stream API
 export const streamApi = {
-  start: () => api.get('/stream/start'),
-  stop: () => api.get('/stream/stop'),
-  status: () => api.get('/stream/status'),
+  start: () => axiosInstance.get('/stream/start').then(res => res.data),
+  stop: () => axiosInstance.get('/stream/stop').then(res => res.data),
+  status: () => axiosInstance.get('/stream/status').then(res => res.data),
   getBaseUrl: () => API_BASE_URL,
   getMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg`,
   getWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws`,
-  // Raw stream (no overlays/bounding boxes) for enrollment
   getRawMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg/raw`,
   getRawWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws/raw`,
 };
 
 // Persons API
 export const personsApi = {
-  list: (search?: string) => api.get('/persons/', { params: search ? { search } : undefined }),
-  getDetails: (personId: number) => api.get(`/persons/${personId}/details`),
+  list: (search?: string) =>
+    axiosInstance.get('/persons/', { params: search ? { search } : undefined }).then(res => res.data),
+  getDetails: (personId: number) =>
+    axiosInstance.get(`/persons/${personId}/details`).then(res => res.data),
   enroll: (name: string, image: File, idCard?: string, caseInfo?: string, watchlistStatus?: string, threatLevel?: string) => {
     const formData = new FormData();
     formData.append('name', name);
@@ -34,9 +35,9 @@ export const personsApi = {
     if (caseInfo) formData.append('case', caseInfo);
     if (watchlistStatus) formData.append('watchlist_status', watchlistStatus);
     if (threatLevel) formData.append('threat_level', threatLevel);
-    return api.post('/persons/enroll', formData, {
+    return axiosInstance.post('/persons/enroll', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    }).then(res => res.data);
   },
   enrollFromCamera: (name: string, idCard?: string, caseInfo?: string, watchlistStatus?: string, threatLevel?: string) => {
     const params = new URLSearchParams({ name });
@@ -44,17 +45,19 @@ export const personsApi = {
     if (caseInfo) params.append('case', caseInfo);
     if (watchlistStatus) params.append('watchlist_status', watchlistStatus);
     if (threatLevel) params.append('threat_level', threatLevel);
-    return api.post(`/persons/enroll-from-camera?${params.toString()}`);
+    return axiosInstance.post(`/persons/enroll-from-camera?${params.toString()}`).then(res => res.data);
   },
   addImage: (personId: number, image: File) => {
     const formData = new FormData();
     formData.append('image', image);
-    return api.post(`/persons/${personId}/add-image`, formData, {
+    return axiosInstance.post(`/persons/${personId}/add-image`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    }).then(res => res.data);
   },
-  delete: (personId: number) => api.delete(`/persons/${personId}`),
-  stats: () => api.get('/persons/stats'),
+  delete: (personId: number) => axiosInstance.delete(`/persons/${personId}`).then(res => res.data),
+  stats: () => axiosInstance.get('/persons/stats').then(res => res.data),
+  getImageUrl: (personId: number, timestamp?: number) =>
+    `${API_BASE_URL}/persons/${personId}/image?t=${timestamp || Date.now()}`,
 };
 
 // Alerts API
@@ -64,44 +67,39 @@ export const alertsApi = {
     offset?: number;
     acknowledged?: boolean;
     search?: string;
-    time_range?: string;  // "24h", "7d", "30d", "all"
+    time_range?: string;
     threat_level?: string;
     person_id?: number;
-  }) => api.get('/alerts/', { params }),
-  acknowledge: (alertId: number) => api.post(`/alerts/${alertId}/acknowledge`),
+  }) => axiosInstance.get('/alerts/', { params }).then(res => res.data),
+  acknowledge: (alertId: number) =>
+    axiosInstance.post(`/alerts/${alertId}/acknowledge`).then(res => res.data),
   verify: (alertId: number, action: string, notes?: string) =>
-    api.post(`/alerts/${alertId}/verify`, null, { params: { action, notes } }),
-  delete: (alertId: number) => api.delete(`/alerts/${alertId}`),
+    axiosInstance.post(`/alerts/${alertId}/verify`, null, { params: { action, notes } }).then(res => res.data),
+  delete: (alertId: number) => axiosInstance.delete(`/alerts/${alertId}`).then(res => res.data),
   getWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/alerts/ws`,
   getSnapshotUrl: (alertId: number, timestamp?: number) =>
     `${API_BASE_URL}/alerts/${alertId}/snapshot?t=${timestamp || Date.now()}`,
   getVideoUrl: (alertId: number) =>
     `${API_BASE_URL}/alerts/${alertId}/video`,
   checkVideoExists: (alertId: number) =>
-    api.get(`/alerts/${alertId}/video/exists`),
+    axiosInstance.get(`/alerts/${alertId}/video/exists`).then(res => res.data),
   exportCsv: (params?: { time_range?: string; search?: string; threat_level?: string }) => {
     const queryString = new URLSearchParams(
-      Object.entries(params || {}).filter(([_, v]) => v !== undefined) as [string, string][]
+      Object.entries(params || {}).filter(([, v]) => v !== undefined) as [string, string][]
     ).toString();
     return `${API_BASE_URL}/alerts/export/csv${queryString ? '?' + queryString : ''}`;
   },
 };
 
-// Get person reference image URL with cache-busting timestamp
-export const getPersonImageUrl = (personId: number, timestamp?: number) =>
-  `${API_BASE_URL}/persons/${personId}/image?t=${timestamp || Date.now()}`;
-
 // System API
 export const systemApi = {
-  status: () => api.get('/system/status'),
-  cameraInfo: () => api.get('/system/camera/info'),
-  // Resource monitoring
-  resources: () => api.get('/system/resources'),
-  // Storage monitoring
-  storage: () => api.get('/system/storage'),
-  cleanupStorage: (days: number = 30) => api.post('/system/storage/cleanup', null, { params: { days } }),
-  // Settings
-  getSettings: () => api.get('/system/settings'),
+  status: () => axiosInstance.get('/system/status').then(res => res.data),
+  cameraInfo: () => axiosInstance.get('/system/camera/info').then(res => res.data),
+  resources: () => axiosInstance.get('/system/resources').then(res => res.data),
+  storage: () => axiosInstance.get('/system/storage').then(res => res.data),
+  cleanupStorage: (days: number = 30) =>
+    axiosInstance.post('/system/storage/cleanup', null, { params: { days } }).then(res => res.data),
+  getSettings: () => axiosInstance.get('/system/settings').then(res => res.data),
   updateSettings: (settings: {
     detection_confidence?: number;
     recognition_threshold?: number;
@@ -110,17 +108,27 @@ export const systemApi = {
     alert_cooldown_seconds?: number;
     video_recording_enabled?: boolean;
     video_clip_duration?: number;
-  }) => api.post('/system/settings/update', null, { params: settings }),
-  // Available models
-  getModels: () => api.get('/system/models'),
+  }) => axiosInstance.post('/system/settings/update', null, { params: settings }).then(res => res.data),
+  getModels: () => axiosInstance.get('/system/models').then(res => res.data),
   changeModel: (model: string, useFp16: boolean = true) =>
-    api.post('/system/models/change', null, { params: { model, use_fp16: useFp16 } }),
-  // Camera PTZ zoom control
-  zoomIn: (speed: number = 50) => api.post('/system/camera/zoom', null, { params: { action: 'in', speed } }),
-  zoomOut: (speed: number = 50) => api.post('/system/camera/zoom', null, { params: { action: 'out', speed } }),
-  zoomStop: () => api.post('/system/camera/zoom', null, { params: { action: 'stop' } }),
-  zoomSet: (level: number) => api.post('/system/camera/zoom/set', null, { params: { level } }),
-  ptzStatus: () => api.get('/system/camera/ptz/status'),
+    axiosInstance.post('/system/models/change', null, { params: { model, use_fp16: useFp16 } }).then(res => res.data),
+  zoomIn: (speed: number = 50) =>
+    axiosInstance.post('/system/camera/zoom', null, { params: { action: 'in', speed } }).then(res => res.data),
+  zoomOut: (speed: number = 50) =>
+    axiosInstance.post('/system/camera/zoom', null, { params: { action: 'out', speed } }).then(res => res.data),
+  zoomStop: () =>
+    axiosInstance.post('/system/camera/zoom', null, { params: { action: 'stop' } }).then(res => res.data),
+  zoomSet: (level: number) =>
+    axiosInstance.post('/system/camera/zoom/set', null, { params: { level } }).then(res => res.data),
+  ptzStatus: () => axiosInstance.get('/system/camera/ptz/status').then(res => res.data),
+};
+
+// Unified API export
+const api = {
+  stream: streamApi,
+  persons: personsApi,
+  alerts: alertsApi,
+  system: systemApi,
 };
 
 export default api;
