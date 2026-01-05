@@ -29,11 +29,22 @@
 
 | Component | Current | Issue |
 |-----------|---------|-------|
-| Detection | SCRFD_500M (buffalo_s) | Low accuracy on hard cases (69% Hard set) |
-| Recognition | MobileFaceNet | Good but not best |
+| Detection | SCRFD_10G (buffalo_l) | Good - already upgraded! |
+| Recognition | ResNet50 (w600k_r50) | Good but ResNet100 available |
 | Video Decode | GStreamer + nvv4l2decoder | GPU→CPU→GPU copies |
 | Inference | ONNX Runtime CUDA | 2-3x slower than TensorRT |
 | Features | Many (alerts, auth, video recording) | Too complex for base |
+
+## Available Model Packs (Installed)
+
+| Pack | Detector | Recognition | Status |
+|------|----------|-------------|--------|
+| buffalo_sc | SCRFD_500M | MobileFaceNet | Smallest |
+| buffalo_s | SCRFD_500M | MobileFaceNet | Small |
+| **buffalo_l** | **SCRFD_10G** | ResNet50 | **Currently used** |
+| buffalo_l_fp16 | SCRFD_10G (FP16) | ResNet50 (FP16) | Faster |
+| **buffalo_r100** | **SCRFD_10G** | **ResNet100** | **Highest accuracy** |
+| buffalo_r100_fp16 | SCRFD_10G (FP16) | ResNet100 | Needs TensorRT |
 
 ---
 

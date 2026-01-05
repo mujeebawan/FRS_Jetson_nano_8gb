@@ -84,3 +84,4 @@ htmlcov/
 *.key
 credentials.json
 reference/
+data/models/arcface_r100/*.onnx
