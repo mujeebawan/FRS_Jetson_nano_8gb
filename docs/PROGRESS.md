@@ -1,16 +1,17 @@
 # Project Progress - Face Recognition Security System
 
-**Last Updated**: 2025-12-02
+**Last Updated**: 2026-01-07
 **Device**: Jetson Orin Nano 8GB
 **GitHub Repo**: https://github.com/mujeebawan/FRS_Jetson_nano_8gb
 
-## Current Status: PRODUCTION READY
+## Current Status: BASE SYSTEM V2 - TensorRT Optimized
 
-System is fully operational with:
-- GPU-accelerated face detection/recognition (25-35 FPS)
-- Multi-model support (buffalo_s and buffalo_l)
-- FP16 optimization for faster inference
-- Systemd service for auto-start on boot
+System is fully operational with TensorRT acceleration:
+- **47+ FPS** with TensorRT Execution Provider (10x speedup)
+- **98.23% accuracy** on LFW benchmark
+- **21ms latency** end-to-end
+- Default model: buffalo_l (SCRFD_10G + ResNet50)
+- FP16 inference with cached TensorRT engines
 - WebSocket alerts and MJPEG streaming
 
 ---
@@ -25,12 +26,62 @@ System is fully operational with:
 | Jetson IP (Eth) | 192.168.1.100 |
 | Backend Port | 8000 |
 | Frontend Port | 5173 |
-| Active Model | buffalo_s_fp16 |
+| Active Model | buffalo_l (SCRFD_10G + ResNet50) |
+| Inference Provider | TensorRT EP + FP16 |
 | Persons Enrolled | 3 (Mujeeb, Mubashir, Zohaib) |
 
 ---
 
 ## Session Log
+
+### Session 5 - 2026-01-07 (TensorRT EP Integration - Base System V2)
+
+#### Major Achievements:
+
+1. **TensorRT Execution Provider Integration**
+   - Added `use_tensorrt` config option (default: True)
+   - TensorRT EP with FP16 enabled for 10x speedup
+   - Engine caching at `data/tensorrt_engines/`
+   - Fallback chain: TensorRT → CUDA → CPU
+
+2. **Performance Improvements**
+   - Before (CUDA EP): ~4.5 FPS, 223ms latency
+   - After (TensorRT EP): **47.6 FPS, 21ms latency**
+   - **10.6x speedup** with no accuracy loss
+
+3. **LFW Benchmark Results**
+   - buffalo_l (SCRFD_10G + ResNet50): **98.23% accuracy @ 45 FPS**
+   - buffalo_custom_500m_r50: 97.53% accuracy @ 60 FPS
+   - ResNet100 broken with TensorRT FP16 (known issue)
+
+4. **Model Selection**
+   - Default changed from buffalo_s to buffalo_l
+   - buffalo_l recommended for security (higher accuracy)
+   - buffalo_custom_500m_r50 available for attendance (higher speed)
+
+5. **Benchmark Scripts Added**
+   - `profile_tensorrt_ep.py` - TensorRT EP profiling
+   - `evaluate_lfw_trt.py` - LFW accuracy evaluation
+   - `benchmark_deepstream_hybrid.py` - DeepStream comparison
+
+#### Files Modified:
+
+| File | Changes |
+|------|---------|
+| `backend/app/config.py` | Added `use_tensorrt` option, changed default to buffalo_l |
+| `backend/app/core/detector.py` | TensorRT EP integration with engine caching |
+| `TENSORRT_BENCHMARK_RESULTS.md` | Complete benchmark documentation |
+
+#### TensorRT Engine Cache:
+
+```
+data/tensorrt_engines/
+├── TensorrtExecutionProvider_*_det_10g_*.engine (9MB)
+├── TensorrtExecutionProvider_*_w600k_r50_*.engine (72MB)
+└── ... (other model engines)
+```
+
+---
 
 ### Session 4 - 2025-12-02 (Multi-Model Support & Production Ready)
 
@@ -208,13 +259,20 @@ Note: Zohaib's face not detected by buffalo_l model (different detection sensiti
 
 ### Jetson Orin Nano 8GB (JetPack 6.2)
 
-| Configuration | FPS | GPU Usage | Notes |
-|--------------|-----|-----------|-------|
-| CPU only | 1-2 | 0% | Not usable |
-| GPU (FP32) | 15-20 | 60-80% | Good |
-| GPU (FP16) buffalo_s | 25-35 | 45-70% | Recommended |
-| GPU (FP16) buffalo_l | 15-20 | 60-85% | Higher accuracy |
-| GPU + Motion Trigger | 30-40 | 20-50% | Best efficiency |
+| Configuration | FPS | Latency | Accuracy | Notes |
+|--------------|-----|---------|----------|-------|
+| CPU only | 1-2 | 500ms+ | - | Not usable |
+| CUDA EP (FP32) | 4-5 | 223ms | 98.23% | Baseline |
+| **TensorRT EP (FP16) buffalo_l** | **47** | **21ms** | **98.23%** | **PRODUCTION** |
+| TensorRT EP (FP16) 500m_r50 | 60 | 17ms | 97.53% | High-speed option |
+
+### TensorRT vs CUDA EP Comparison
+
+| Metric | CUDA EP | TensorRT EP | Improvement |
+|--------|---------|-------------|-------------|
+| Throughput | 4.5 FPS | 47.6 FPS | **10.6x** |
+| Latency | 223ms | 21ms | **10.6x** |
+| Accuracy | 98.23% | 98.23% | No loss |
 
 ---
 
@@ -253,8 +311,10 @@ tail -f /tmp/frs_frontend.log
 
 ## Future Enhancements
 
-- [ ] Multi-camera support
+- [x] TensorRT Execution Provider (10x speedup) ✅ DONE
+- [x] TensorRT engine caching ✅ DONE
+- [ ] **DeepStream integration** (Phase 3 - next)
+- [ ] Multi-camera support (4-8 cameras)
+- [ ] Code simplification for base system (Phase 4)
 - [ ] PostgreSQL for production
-- [ ] Face augmentation for better recognition
-- [ ] TensorRT engine caching
 - [ ] Mobile app for alerts

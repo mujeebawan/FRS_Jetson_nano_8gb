@@ -131,9 +131,12 @@ class Settings(BaseSettings):
         return str(self._project_root / "data" / "images")
 
     # Model Configuration (with persistent defaults)
-    recognition_model: str = _persisted.get("recognition_model", "buffalo_s")
+    # buffalo_l = SCRFD_10G + ResNet50 (recommended with TensorRT)
+    # buffalo_r100 = SCRFD_10G + ResNet100 (highest accuracy)
+    recognition_model: str = _persisted.get("recognition_model", "buffalo_l")
     use_fp16: bool = _persisted.get("use_fp16", True)
     use_gpu: bool = True  # GPU enabled by default
+    use_tensorrt: bool = _persisted.get("use_tensorrt", True)  # TensorRT EP for 10x speedup
 
     # FAISS Settings
     faiss_use_gpu: bool = False  # Start with CPU, upgrade later

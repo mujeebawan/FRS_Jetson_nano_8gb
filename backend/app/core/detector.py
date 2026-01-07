@@ -36,8 +36,9 @@ class FaceDetector:
         model_name: str = None,  # Uses config if not specified
         min_confidence: float = 0.5,
         det_size: tuple = (640, 640),  # Full size for GPU processing
-        use_gpu: bool = True,  # Enable GPU by default
-        use_fp16: bool = True,  # Enable FP16 models for faster inference
+        use_gpu: bool = None,  # Uses config if not specified
+        use_fp16: bool = None,  # Uses config if not specified
+        use_tensorrt: bool = None,  # Uses config if not specified
         tensorrt_cache_dir: str = None
     ):
         """
@@ -49,16 +50,21 @@ class FaceDetector:
             det_size: Detection input size
             use_gpu: Whether to use GPU acceleration
             use_fp16: Whether to use FP16 models (faster, lower memory)
+            use_tensorrt: Whether to use TensorRT Execution Provider (10x speedup)
             tensorrt_cache_dir: Directory to cache TensorRT engines
         """
-        # Get model from config if not specified
+        # Get settings from config if not specified
         from ..config import settings
         base_model = model_name or settings.recognition_model
+        use_gpu = use_gpu if use_gpu is not None else settings.use_gpu
+        use_fp16 = use_fp16 if use_fp16 is not None else settings.use_fp16
+        use_tensorrt = use_tensorrt if use_tensorrt is not None else settings.use_tensorrt
 
         self.min_confidence = min_confidence
         self.det_size = det_size
         self.use_gpu = use_gpu
         self.use_fp16 = use_fp16
+        self.use_tensorrt = use_tensorrt
         self.tensorrt_cache_dir = tensorrt_cache_dir or TENSORRT_CACHE_DIR
         self._app = None
         self._initialized = False
@@ -79,22 +85,35 @@ class FaceDetector:
         # Ensure cache directory exists
         os.makedirs(self.tensorrt_cache_dir, exist_ok=True)
 
-        logger.info(f"FaceDetector configured: model={self.model_name}, det_size={det_size}, GPU={use_gpu}, FP16={use_fp16}")
+        logger.info(f"FaceDetector configured: model={self.model_name}, det_size={det_size}, GPU={use_gpu}, FP16={use_fp16}, TensorRT={use_tensorrt}")
 
     def _build_providers(self) -> list:
-        """Build ONNX Runtime execution providers with CUDA acceleration."""
+        """Build ONNX Runtime execution providers with optional TensorRT acceleration."""
         providers = []
 
         if self.use_gpu:
-            # CUDA provider (primary for Orin Nano - no DLA/TensorRT compiler available)
+            if self.use_tensorrt:
+                # TensorRT Execution Provider (10x faster than CUDA EP)
+                # Uses FP16 internally for speed while accepting FP32 input
+                trt_options = {
+                    'device_id': 0,
+                    'trt_fp16_enable': True,  # Use FP16 for faster inference
+                    'trt_engine_cache_enable': True,  # Cache TRT engines
+                    'trt_engine_cache_path': self.tensorrt_cache_dir,
+                }
+                providers.append(('TensorrtExecutionProvider', trt_options))
+                logger.info(f"TensorRT EP enabled with FP16, cache: {self.tensorrt_cache_dir}")
+
+            # CUDA provider (fallback if TensorRT enabled, primary otherwise)
             cuda_options = {
                 'device_id': 0,
                 'arena_extend_strategy': 'kNextPowerOfTwo',
-                'cudnn_conv_algo_search': 'EXHAUSTIVE',  # Better performance
+                'cudnn_conv_algo_search': 'EXHAUSTIVE',
                 'do_copy_in_default_stream': True,
             }
             providers.append(('CUDAExecutionProvider', cuda_options))
-            logger.info("CUDA GPU acceleration enabled")
+            if not self.use_tensorrt:
+                logger.info("CUDA EP enabled (TensorRT disabled)")
 
         # CPU fallback
         providers.append('CPUExecutionProvider')
