@@ -4,10 +4,11 @@ import { PersonList } from './components/PersonList';
 import { AlertList } from './components/AlertList';
 import { SystemStatus } from './components/SystemStatus';
 import { SystemSettings } from './components/SystemSettings';
-import { Monitor, Users, Bell, Settings } from 'lucide-react';
+import { CameraList } from './components/CameraList';
+import { Monitor, Users, Bell, Settings, Camera } from 'lucide-react';
 import './App.css';
 
-type Tab = 'dashboard' | 'persons' | 'alerts' | 'settings';
+type Tab = 'dashboard' | 'persons' | 'alerts' | 'cameras' | 'settings';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -37,6 +38,13 @@ function App() {
           >
             <Bell size={18} />
             Alerts
+          </button>
+          <button
+            className={activeTab === 'cameras' ? 'active' : ''}
+            onClick={() => setActiveTab('cameras')}
+          >
+            <Camera size={18} />
+            Cameras
           </button>
           <button
             className={activeTab === 'settings' ? 'active' : ''}
@@ -70,6 +78,12 @@ function App() {
         {activeTab === 'alerts' && (
           <div className="alerts-page">
             <AlertList fullPage={true} />
+          </div>
+        )}
+
+        {activeTab === 'cameras' && (
+          <div className="cameras-page">
+            <CameraList />
           </div>
         )}
 

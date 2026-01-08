@@ -91,6 +91,50 @@ export const alertsApi = {
 export const getPersonImageUrl = (personId: number, timestamp?: number) =>
   `${API_BASE_URL}/persons/${personId}/image?t=${timestamp || Date.now()}`;
 
+// Cameras API
+export const camerasApi = {
+  list: (enabledOnly: boolean = false) =>
+    api.get('/cameras/', { params: enabledOnly ? { enabled_only: true } : undefined }),
+  get: (cameraId: number) => api.get(`/cameras/${cameraId}`),
+  create: (data: {
+    name: string;
+    ip_address: string;
+    port?: number;
+    username: string;
+    password: string;
+    stream_quality?: string;
+    enabled?: boolean;
+    detection_enabled?: boolean;
+    detection_confidence?: number;
+    recognition_threshold?: number;
+    frame_skip?: number;
+    location?: string;
+    notes?: string;
+  }) => api.post('/cameras/', data),
+  update: (cameraId: number, data: {
+    name?: string;
+    ip_address?: string;
+    port?: number;
+    username?: string;
+    password?: string;
+    stream_quality?: string;
+    enabled?: boolean;
+    detection_enabled?: boolean;
+    detection_confidence?: number;
+    recognition_threshold?: number;
+    frame_skip?: number;
+    location?: string;
+    notes?: string;
+  }) => api.put(`/cameras/${cameraId}`, data),
+  delete: (cameraId: number) => api.delete(`/cameras/${cameraId}`),
+  test: (cameraId: number) => api.post(`/cameras/${cameraId}/test`),
+  snapshot: (cameraId: number) => `${API_BASE_URL}/cameras/${cameraId}/snapshot?t=${Date.now()}`,
+  enable: (cameraId: number) => api.post(`/cameras/${cameraId}/enable`),
+  disable: (cameraId: number) => api.post(`/cameras/${cameraId}/disable`),
+  getQualityOptions: () => api.get('/cameras/quality-options'),
+  getSummary: () => api.get('/cameras/stats/summary'),
+};
+
 // System API
 export const systemApi = {
   status: () => api.get('/system/status'),
