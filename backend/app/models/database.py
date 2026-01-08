@@ -225,3 +225,84 @@ class SystemConfiguration(Base):
 
     def __repr__(self):
         return f"<SystemConfiguration(key='{self.config_key}', value='{self.config_value}')>"
+
+
+class Camera(Base):
+    """
+    Camera model - stores camera configuration for multi-camera support.
+    Supports Hikvision cameras with multiple stream qualities.
+
+    Hikvision DS-2CD7A47EWD-XZS Stream Channels:
+    - Channel 101 (main): 4K/1080p high quality
+    - Channel 102 (sub): 720p medium quality
+    - Channel 103 (third): 480p low quality (recommended for AI)
+    """
+    __tablename__ = "cameras"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(100), nullable=False)  # "Front Gate", "Back Door"
+    ip_address = Column(String(45), nullable=False)  # IPv4 or IPv6
+    port = Column(Integer, default=554)  # RTSP port
+    username = Column(String(100), nullable=False)
+    password = Column(String(255), nullable=False)  # Should be encrypted in production
+
+    # Stream quality selection
+    # main = Channel 101 (4K/1080p), sub = Channel 102 (720p), third = Channel 103 (480p)
+    stream_quality = Column(String(20), default="third")
+
+    # Camera state
+    enabled = Column(Boolean, default=True)  # Include in pipeline
+    detection_enabled = Column(Boolean, default=True)  # Run face detection
+
+    # Per-camera settings (nullable = use global settings)
+    detection_confidence = Column(Float, nullable=True)  # Override global
+    recognition_threshold = Column(Float, nullable=True)  # Override global
+    frame_skip = Column(Integer, nullable=True)  # Override global
+
+    # Runtime status (updated by stream service)
+    is_online = Column(Boolean, default=False)
+    last_seen = Column(DateTime, nullable=True)
+    current_fps = Column(Float, nullable=True)
+    error_message = Column(String(500), nullable=True)
+
+    # Metadata
+    location = Column(String(255), nullable=True)  # Physical location description
+    notes = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Constants for stream quality options
+    STREAM_CHANNELS = {
+        "main": "Streaming/Channels/101",    # 4K/1080p
+        "sub": "Streaming/Channels/102",     # 720p
+        "third": "Streaming/Channels/103",   # 480p (recommended)
+    }
+
+    QUALITY_DESCRIPTIONS = {
+        "main": "High (4K/1080p)",
+        "sub": "Medium (720p)",
+        "third": "Low (480p) - Recommended for AI",
+    }
+
+    @property
+    def rtsp_url(self) -> str:
+        """Generate RTSP URL for this camera."""
+        from urllib.parse import quote
+        channel = self.STREAM_CHANNELS.get(self.stream_quality, "Streaming/Channels/103")
+        # URL encode password to handle special characters
+        encoded_password = quote(self.password, safe='')
+        return f"rtsp://{self.username}:{encoded_password}@{self.ip_address}:{self.port}/{channel}"
+
+    @property
+    def display_status(self) -> str:
+        """Get human-readable status."""
+        if not self.enabled:
+            return "Disabled"
+        if self.is_online:
+            return "Online"
+        return "Offline"
+
+    def __repr__(self):
+        return f"<Camera(id={self.id}, name='{self.name}', ip='{self.ip_address}', status='{self.display_status}')>"

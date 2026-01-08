@@ -21,18 +21,56 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def seed_initial_camera(db):
+    """Seed initial camera if no cameras exist."""
+    from .models.database import Camera
+
+    # Check if any cameras exist
+    camera_count = db.query(Camera).count()
+    if camera_count == 0:
+        # Create Camera 1 as seed data
+        camera1 = Camera(
+            name="Camera 1",
+            ip_address="192.168.1.70",
+            port=554,
+            username="admin",
+            password="Admin@123",
+            stream_quality="third",  # 480p - recommended for AI
+            enabled=True,
+            detection_enabled=True,
+            location="Main Entrance",
+            notes="Initial camera - Hikvision DS-2CD7A47EWD-XZS"
+        )
+        db.add(camera1)
+        db.commit()
+        logger.info(f"Seeded initial camera: {camera1.name} ({camera1.ip_address})")
+        return 1
+    return camera_count
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
-    logger.info("Starting Face Recognition Security System...")
-    logger.info(f"Camera: {settings.camera_ip}")
-    logger.info(f"Stream: {settings.process_stream} (skip={settings.frame_skip})")
+    logger.info("Starting Face Recognition Security System - Base System V2...")
+    logger.info(f"Model: {settings.recognition_model}, TensorRT: {settings.use_tensorrt}")
+    logger.info(f"Frame skip: {settings.frame_skip}")
 
     # Initialize database tables
-    from .models.database import init_db, get_db, Person
+    from .models.database import init_db, get_db, Person, Camera, SessionLocal
     init_db()
     logger.info("Database tables initialized")
+
+    # Seed initial camera if needed
+    db = SessionLocal()
+    try:
+        camera_count = seed_initial_camera(db)
+        enabled_cameras = db.query(Camera).filter(Camera.enabled == True).all()
+        logger.info(f"Cameras configured: {camera_count} total, {len(enabled_cameras)} enabled")
+        for cam in enabled_cameras:
+            logger.info(f"  - {cam.name}: {cam.ip_address} ({cam.stream_quality})")
+    finally:
+        db.close()
 
     # Initialize services
     from .services.camera import CameraService

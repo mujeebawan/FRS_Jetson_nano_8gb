@@ -139,7 +139,25 @@ class Settings(BaseSettings):
     use_tensorrt: bool = _persisted.get("use_tensorrt", True)  # TensorRT EP for 10x speedup
 
     # FAISS Settings
-    faiss_use_gpu: bool = False  # Start with CPU, upgrade later
+    faiss_use_gpu: bool = _persisted.get("faiss_use_gpu", True)  # GPU FAISS for batch performance
+
+    # DeepStream Multi-Camera Settings
+    # Camera count determines batch sizes for optimal performance
+    # Options: 1, 2, 4, 8 cameras
+    deepstream_camera_count: int = _persisted.get("deepstream_camera_count", 1)
+
+    @property
+    def deepstream_pgie_batch_size(self) -> int:
+        """PGIE batch size = number of cameras (frames batched together)"""
+        return self.deepstream_camera_count
+
+    @property
+    def deepstream_sgie_batch_size(self) -> int:
+        """SGIE batch size = cameras × max faces per frame (8 faces assumed)"""
+        return self.deepstream_camera_count * 8
+
+    # DeepStream camera URLs (persisted)
+    deepstream_camera_urls: list = _persisted.get("deepstream_camera_urls", [])
 
     model_config = SettingsConfigDict(
         env_file=".env",
