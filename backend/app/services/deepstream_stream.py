@@ -202,15 +202,20 @@ class DeepStreamManager:
             sgie = self._create_element("nvinfer", "sgie")
             sgie.set_property("config-file-path", SGIE_CONFIG)
 
-            # Video converter for output
+            # Video converter for output (use GPU compute, not VIC)
             nvvidconv = self._create_element("nvvideoconvert", "convertor")
+            nvvidconv.set_property("compute-hw", 1)  # 1 = GPU, 0 = VIC (VIC doesn't support BGR)
+            nvvidconv.set_property("nvbuf-memory-type", 0)  # 0 = NVBUF_MEM_DEFAULT
 
             # OSD for bounding boxes
             nvosd = self._create_element("nvdsosd", "osd")
             nvosd.set_property("process-mode", 0)  # CPU mode for text
 
-            # Convert to BGR for appsink
+            # Convert to BGR for appsink (use GPU compute, not VIC)
             nvvidconv2 = self._create_element("nvvideoconvert", "convertor2")
+            nvvidconv2.set_property("compute-hw", 1)  # Force GPU mode for BGR conversion
+            nvvidconv2.set_property("nvbuf-memory-type", 0)
+
             capsfilter = self._create_element("capsfilter", "capsfilter")
             caps = Gst.Caps.from_string("video/x-raw, format=BGR")
             capsfilter.set_property("caps", caps)
