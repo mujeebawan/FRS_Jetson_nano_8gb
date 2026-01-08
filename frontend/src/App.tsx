@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import { LiveStream } from './components/LiveStream';
+import { MultiCameraView } from './components/MultiCameraView';
 import { PersonList } from './components/PersonList';
 import { AlertList } from './components/AlertList';
 import { SystemStatus } from './components/SystemStatus';
 import { SystemSettings } from './components/SystemSettings';
 import { CameraList } from './components/CameraList';
-import { Monitor, Users, Bell, Settings, Camera } from 'lucide-react';
+import { Monitor, Users, Bell, Settings, Camera, Grid, Video } from 'lucide-react';
 import './App.css';
 
 type Tab = 'dashboard' | 'persons' | 'alerts' | 'cameras' | 'settings';
+type DashboardView = 'single' | 'multi';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [dashboardView, setDashboardView] = useState<DashboardView>('single');
 
   return (
     <div className="app">
@@ -60,7 +63,29 @@ function App() {
         {activeTab === 'dashboard' && (
           <div className="dashboard">
             <div className="dashboard-main">
-              <LiveStream autoStart={true} />
+              <div className="view-toggle">
+                <button
+                  className={dashboardView === 'single' ? 'active' : ''}
+                  onClick={() => setDashboardView('single')}
+                  title="Single Camera View"
+                >
+                  <Video size={16} />
+                  Single
+                </button>
+                <button
+                  className={dashboardView === 'multi' ? 'active' : ''}
+                  onClick={() => setDashboardView('multi')}
+                  title="Multi-Camera Grid"
+                >
+                  <Grid size={16} />
+                  Multi
+                </button>
+              </div>
+              {dashboardView === 'single' ? (
+                <LiveStream autoStart={true} />
+              ) : (
+                <MultiCameraView />
+              )}
             </div>
             <div className="dashboard-sidebar">
               <SystemStatus />
