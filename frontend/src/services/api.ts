@@ -20,6 +20,9 @@ export const streamApi = {
   // Raw stream (no overlays/bounding boxes) for enrollment
   getRawMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg/raw`,
   getRawWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws/raw`,
+  // Camera switching
+  getCurrentCamera: () => api.get('/stream/camera'),
+  switchCamera: (cameraId: number) => api.post(`/stream/camera/${cameraId}`),
 };
 
 // Persons API

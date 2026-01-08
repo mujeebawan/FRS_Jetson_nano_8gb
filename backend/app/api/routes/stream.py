@@ -1,8 +1,11 @@
 """Stream API routes"""
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.responses import StreamingResponse, Response
+from sqlalchemy.orm import Session
 import asyncio
+
+from ...models.database import get_db, Camera
 
 router = APIRouter()
 
@@ -24,7 +27,7 @@ async def stop_stream(request: Request):
 
 @router.get("/status")
 async def stream_status(request: Request):
-    """Get stream status including motion detection stats."""
+    """Get stream status including camera info and motion detection stats."""
     stream = request.app.state.stream
     response = {
         "running": stream.is_running,
@@ -33,12 +36,74 @@ async def stream_status(request: Request):
         "motion_active": stream.motion_active,
     }
 
+    # Include current camera info
+    if stream.camera:
+        response["camera"] = {
+            "id": stream.camera_id,
+            "name": stream.camera.name,
+            "ip_address": stream.camera.ip_address,
+            "stream_quality": stream.camera.stream_quality
+        }
+
     # Include full motion stats if available
     motion_stats = stream.motion_stats
     if motion_stats:
         response["motion"] = motion_stats
 
     return response
+
+
+@router.post("/camera/{camera_id}")
+async def switch_camera(camera_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Switch streaming to a different camera.
+
+    Args:
+        camera_id: ID of the camera to switch to
+    """
+    stream = request.app.state.stream
+
+    # Get camera from database
+    camera = db.query(Camera).filter(
+        Camera.id == camera_id,
+        Camera.enabled == True
+    ).first()
+
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found or not enabled")
+
+    # Switch camera
+    success = stream.set_camera(camera)
+
+    return {
+        "success": success,
+        "message": f"Switched to camera: {camera.name}" if success else "Failed to switch camera",
+        "camera": {
+            "id": camera.id,
+            "name": camera.name,
+            "ip_address": camera.ip_address,
+            "stream_quality": camera.stream_quality
+        }
+    }
+
+
+@router.get("/camera")
+async def get_current_camera(request: Request):
+    """Get the currently active camera."""
+    stream = request.app.state.stream
+
+    if not stream.camera:
+        return {"camera": None, "message": "No camera configured"}
+
+    return {
+        "camera": {
+            "id": stream.camera_id,
+            "name": stream.camera.name,
+            "ip_address": stream.camera.ip_address,
+            "stream_quality": stream.camera.stream_quality,
+            "rtsp_url_masked": f"rtsp://***@{stream.camera.ip_address}:{stream.camera.port}/..."
+        }
+    }
 
 
 @router.get("/snapshot")

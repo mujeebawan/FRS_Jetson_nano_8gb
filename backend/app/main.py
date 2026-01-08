@@ -61,14 +61,20 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("Database tables initialized")
 
-    # Seed initial camera if needed
+    # Seed initial camera if needed and get primary camera for streaming
     db = SessionLocal()
+    primary_camera = None
     try:
         camera_count = seed_initial_camera(db)
         enabled_cameras = db.query(Camera).filter(Camera.enabled == True).all()
         logger.info(f"Cameras configured: {camera_count} total, {len(enabled_cameras)} enabled")
         for cam in enabled_cameras:
             logger.info(f"  - {cam.name}: {cam.ip_address} ({cam.stream_quality})")
+
+        # Get first enabled camera as primary for streaming
+        if enabled_cameras:
+            primary_camera = enabled_cameras[0]
+            logger.info(f"Primary camera for streaming: {primary_camera.name}")
     finally:
         db.close()
 
@@ -80,7 +86,10 @@ async def lifespan(app: FastAPI):
     from .core import FaceDetector, FaceRecognizer
 
     app.state.camera = CameraService()
-    app.state.stream = StreamManager(frame_skip=settings.frame_skip)
+    app.state.stream = StreamManager(
+        frame_skip=settings.frame_skip,
+        camera=primary_camera  # Use camera from database
+    )
     app.state.detector = FaceDetector(
         model_name=settings.recognition_model,
         min_confidence=settings.detection_confidence,

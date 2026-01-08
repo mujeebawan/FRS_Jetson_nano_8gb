@@ -8,6 +8,7 @@ Features:
 - Multi-client WebSocket broadcasting
 - Minimal latency pipeline
 - ASYNC processing: Detection runs in separate thread, never blocks stream
+- Database-driven camera management (reads from Camera model)
 """
 
 import cv2
@@ -19,6 +20,7 @@ from typing import Optional, Callable, List, Set, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .processor import FrameProcessor
+    from ..models.database import Camera
 from dataclasses import dataclass
 from queue import Queue, Empty
 import time
@@ -47,6 +49,7 @@ class StreamManager:
     - Hardware-accelerated H264 decoding via GStreamer/nvv4l2decoder
     - Motion-triggered face detection (only process when camera detects movement)
     - Multi-client WebSocket broadcasting with minimal latency
+    - Database-driven camera configuration (Camera model)
     """
 
     def __init__(
@@ -54,18 +57,31 @@ class StreamManager:
         rtsp_url: str = None,
         frame_skip: int = 2,
         max_clients: int = 10,
-        enable_motion_trigger: bool = None
+        enable_motion_trigger: bool = None,
+        camera: "Camera" = None
     ):
         """
         Initialize stream manager.
 
         Args:
-            rtsp_url: RTSP stream URL
+            rtsp_url: RTSP stream URL (deprecated, use camera parameter)
             frame_skip: Process every Nth frame
             max_clients: Maximum concurrent viewers
             enable_motion_trigger: Enable motion-based processing (default from settings)
+            camera: Camera model instance from database (preferred)
         """
-        self.rtsp_url = rtsp_url or self._get_default_stream()
+        # Camera from database takes priority
+        self._camera = camera
+        self._camera_id = camera.id if camera else None
+
+        if camera:
+            self.rtsp_url = camera.rtsp_url
+            # Use camera-specific settings if defined
+            if camera.frame_skip is not None:
+                frame_skip = camera.frame_skip
+        else:
+            self.rtsp_url = rtsp_url or self._get_default_stream()
+
         self.frame_skip = frame_skip
         self.max_clients = max_clients
 
@@ -110,7 +126,10 @@ class StreamManager:
         self._processed_frames = 0
         self._skipped_frames = 0
 
-        logger.info(f"StreamManager initialized: url={self.rtsp_url[:50]}...")
+        if camera:
+            logger.info(f"StreamManager initialized: camera='{camera.name}' ({camera.ip_address}:{camera.port})")
+        else:
+            logger.info(f"StreamManager initialized: url={self.rtsp_url[:50]}...")
         logger.info(f"Motion trigger: {'enabled' if self._enable_motion_trigger else 'disabled'}")
 
     def _get_default_stream(self) -> str:
@@ -497,8 +516,84 @@ class StreamManager:
             "is_running": self._running
         }
 
+        # Add camera info
+        if self._camera:
+            stats["camera"] = {
+                "id": self._camera_id,
+                "name": self._camera.name,
+                "ip_address": self._camera.ip_address,
+                "stream_quality": self._camera.stream_quality
+            }
+
         # Add motion stats
         if self._motion_trigger:
             stats["motion"] = self._motion_trigger.get_stats()
 
         return stats
+
+    @property
+    def camera(self) -> Optional["Camera"]:
+        """Get current camera instance."""
+        return self._camera
+
+    @property
+    def camera_id(self) -> Optional[int]:
+        """Get current camera ID."""
+        return self._camera_id
+
+    def set_camera(self, camera: "Camera") -> bool:
+        """
+        Switch to a different camera.
+
+        Args:
+            camera: Camera model instance from database
+
+        Returns:
+            True if camera switch successful, False otherwise
+        """
+        was_running = self._running
+
+        # Stop current stream
+        if was_running:
+            self.stop()
+
+        # Update camera configuration
+        self._camera = camera
+        self._camera_id = camera.id
+        self.rtsp_url = camera.rtsp_url
+
+        # Use camera-specific frame_skip if defined
+        if camera.frame_skip is not None:
+            self.frame_skip = camera.frame_skip
+
+        logger.info(f"Camera switched to: '{camera.name}' ({camera.ip_address})")
+
+        # Restart if was running
+        if was_running:
+            return self.start()
+
+        return True
+
+    def switch_camera_by_id(self, camera_id: int, db_session) -> bool:
+        """
+        Switch to a camera by ID using database session.
+
+        Args:
+            camera_id: Camera ID in database
+            db_session: SQLAlchemy database session
+
+        Returns:
+            True if camera switch successful, False otherwise
+        """
+        from ..models.database import Camera
+
+        camera = db_session.query(Camera).filter(
+            Camera.id == camera_id,
+            Camera.enabled == True
+        ).first()
+
+        if not camera:
+            logger.error(f"Camera {camera_id} not found or not enabled")
+            return False
+
+        return self.set_camera(camera)
