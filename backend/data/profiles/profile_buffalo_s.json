@@ -1,0 +1,55 @@
+{
+  "profile_result": {
+    "avg_inference_time_ms": 17.708771740144584,
+    "min_inference_time_ms": 13.53066400042735,
+    "max_inference_time_ms": 34.50609899664414,
+    "std_inference_time_ms": 4.1838830551447925,
+    "throughput_fps": 56.46919022244032,
+    "avg_cpu_utilization": 33.32335301172638,
+    "max_cpu_utilization": 42.553191489361694,
+    "avg_gpu_utilization": 66.22500000000001,
+    "max_gpu_utilization": 98.4,
+    "avg_ram_usage_mb": 3642.0094401041665,
+    "max_ram_usage_mb": 3646.53125,
+    "avg_gpu_mem_usage_mb": 0,
+    "max_gpu_mem_usage_mb": 0,
+    "avg_power_watts": 10.416735999999998,
+    "max_power_watts": 11.87552,
+    "model_name": "buffalo_s",
+    "input_size": [
+      640,
+      480
+    ],
+    "num_iterations": 50
+  },
+  "model_info": {
+    "detector": "SCRFD_2.5G_KPS",
+    "recognizer": "ArcFace-R18",
+    "det_params": "0.6M",
+    "rec_params": "24M",
+    "total_params": "~25M",
+    "det_flops": "2.5G",
+    "rec_flops": "6.3G",
+    "embedding_dim": 512,
+    "input_size_det": [
+      640,
+      640
+    ],
+    "input_size_rec": [
+      112,
+      112
+    ]
+  },
+  "system_info": {
+    "device": "Jetson Orin Nano",
+    "jetpack_version": "Unknown",
+    "l4t_version": "R36 (release)",
+    "cuda_version": "12.6",
+    "cudnn_version": "CUDNN_PATCHLEVEL).3.0",
+    "tensorrt_version": "Unknown",
+    "power_mode": "MAXN_SUPER",
+    "max_freq_cpu": "1.73 GHz",
+    "max_freq_gpu": "Unknown"
+  },
+  "timestamp": "2026-01-06T14:04:17.245701"
+}

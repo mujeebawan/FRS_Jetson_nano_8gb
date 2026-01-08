@@ -1,0 +1,19 @@
+{
+  "model_name": "buffalo_custom_500m_r50",
+  "provider": "TensorRT_EP",
+  "fp16_enabled": true,
+  "input_size": [
+    640,
+    480
+  ],
+  "num_iterations": 100,
+  "avg_latency_ms": 16.98245325980679,
+  "min_latency_ms": 14.494508002826478,
+  "max_latency_ms": 23.84611900197342,
+  "std_latency_ms": 2.7408142644860694,
+  "throughput_fps": 58.88430750854763,
+  "p50_latency_ms": 15.398400500998832,
+  "p95_latency_ms": 22.145445500973434,
+  "p99_latency_ms": 23.68980492967239,
+  "timestamp": "2026-01-06T16:37:47.632500"
+}

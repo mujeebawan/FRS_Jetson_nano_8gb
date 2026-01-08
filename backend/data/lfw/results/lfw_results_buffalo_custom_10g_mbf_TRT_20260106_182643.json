@@ -1,0 +1,103 @@
+{
+  "model": "buffalo_custom_10g_mbf_TRT_FP16",
+  "provider": "TensorRT_EP",
+  "fp16_enabled": true,
+  "total_pairs": 6000,
+  "evaluated_pairs": 5983,
+  "skipped_pairs": 17,
+  "best_threshold": 0.20000000000000004,
+  "accuracy": 0.9797760320909242,
+  "precision": 0.9961937716262976,
+  "recall": 0.963198394111743,
+  "f1_score": 0.9794182684129954,
+  "confusion_matrix": {
+    "true_positives": 2879,
+    "true_negatives": 2983,
+    "false_positives": 11,
+    "false_negatives": 110
+  },
+  "timing": {
+    "avg_inference_time_ms": 99.96007414399689,
+    "throughput_fps": 10.00399418031099
+  },
+  "threshold_analysis": [
+    {
+      "threshold": 0.3,
+      "accuracy": 0.9784389102456962,
+      "precision": 0.9996505939902166,
+      "recall": 0.9571763131482101,
+      "f1_score": 0.9779524867544009,
+      "tp": 2861,
+      "tn": 2993,
+      "fp": 1,
+      "fn": 128
+    },
+    {
+      "threshold": 0.35,
+      "accuracy": 0.9735918435567441,
+      "precision": 1.0,
+      "recall": 0.9471395115423219,
+      "f1_score": 0.972852233676976,
+      "tp": 2831,
+      "tn": 2994,
+      "fp": 0,
+      "fn": 158
+    },
+    {
+      "threshold": 0.4,
+      "accuracy": 0.9617248871803443,
+      "precision": 1.0,
+      "recall": 0.9233857477417197,
+      "f1_score": 0.9601669855627065,
+      "tp": 2760,
+      "tn": 2994,
+      "fp": 0,
+      "fn": 229
+    },
+    {
+      "threshold": 0.45,
+      "accuracy": 0.940665218118001,
+      "precision": 1.0,
+      "recall": 0.8812311809969889,
+      "f1_score": 0.9368664414013871,
+      "tp": 2634,
+      "tn": 2994,
+      "fp": 0,
+      "fn": 355
+    },
+    {
+      "threshold": 0.5,
+      "accuracy": 0.9110813972923283,
+      "precision": 1.0,
+      "recall": 0.8220140515222483,
+      "f1_score": 0.9023136246786633,
+      "tp": 2457,
+      "tn": 2994,
+      "fp": 0,
+      "fn": 532
+    },
+    {
+      "threshold": 0.55,
+      "accuracy": 0.8510780544877152,
+      "precision": 1.0,
+      "recall": 0.7019069923051188,
+      "f1_score": 0.8248476508747788,
+      "tp": 2098,
+      "tn": 2994,
+      "fp": 0,
+      "fn": 891
+    },
+    {
+      "threshold": 0.6,
+      "accuracy": 0.7711850242353334,
+      "precision": 1.0,
+      "recall": 0.5419872867179659,
+      "f1_score": 0.702972445215882,
+      "tp": 1620,
+      "tn": 2994,
+      "fp": 0,
+      "fn": 1369
+    }
+  ],
+  "timestamp": "2026-01-06T18:26:43.547166"
+}

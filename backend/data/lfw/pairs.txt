@@ -1,0 +1,1 @@
+/home/tempuser/Downloads/CV_Project/backend/data/lfw/pairs.txt

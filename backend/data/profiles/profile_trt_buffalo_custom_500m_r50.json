@@ -1,0 +1,16 @@
+{
+  "model_name": "buffalo_custom_500m_r50",
+  "provider": "TensorRT",
+  "fp16_enabled": true,
+  "input_size": [
+    640,
+    480
+  ],
+  "num_iterations": 50,
+  "avg_latency_ms": 70.84363227986614,
+  "min_latency_ms": 39.51942800267716,
+  "max_latency_ms": 123.836623999523,
+  "std_latency_ms": 18.73955167806186,
+  "throughput_fps": 14.115594695222896,
+  "timestamp": "2026-01-06T15:03:19.959462"
+}

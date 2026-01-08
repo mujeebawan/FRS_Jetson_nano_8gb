@@ -1,0 +1,109 @@
+{
+  "model": "buffalo_s",
+  "total_pairs": 6000,
+  "evaluated_pairs": 5982,
+  "skipped_pairs": 18,
+  "best_threshold": 0.21,
+  "accuracy": 0.9732530926111669,
+  "precision": 0.9982388164846777,
+  "recall": 0.9481431917029107,
+  "f1_score": 0.9725463280713795,
+  "auc": 0.5093693023210062,
+  "confusion_matrix": {
+    "true_positives": 2834,
+    "true_negatives": 2988,
+    "false_positives": 5,
+    "false_negatives": 155
+  },
+  "timing": {
+    "avg_inference_time_ms": 133.2410453992797,
+    "throughput_fps": 7.50519479191512,
+    "total_inference_times": "[5982 values]"
+  },
+  "threshold_analysis": [
+    {
+      "threshold": 0.3,
+      "accuracy": 0.9707455700434637,
+      "precision": 0.9996448863636364,
+      "recall": 0.9417865506858482,
+      "f1_score": 0.9698535745047373,
+      "tp": 2815,
+      "tn": 2992,
+      "fp": 1,
+      "fn": 174
+    },
+    {
+      "threshold": 0.35,
+      "accuracy": 0.9670678702774992,
+      "precision": 1.0,
+      "recall": 0.9340916694546672,
+      "f1_score": 0.9659228507178689,
+      "tp": 2792,
+      "tn": 2993,
+      "fp": 0,
+      "fn": 197
+    },
+    {
+      "threshold": 0.4,
+      "accuracy": 0.9545302574389836,
+      "precision": 1.0,
+      "recall": 0.9089996654399465,
+      "f1_score": 0.9523308797756748,
+      "tp": 2717,
+      "tn": 2993,
+      "fp": 0,
+      "fn": 272
+    },
+    {
+      "threshold": 0.45,
+      "accuracy": 0.93547308592444,
+      "precision": 1.0,
+      "recall": 0.8708598193375711,
+      "f1_score": 0.9309728183118742,
+      "tp": 2603,
+      "tn": 2993,
+      "fp": 0,
+      "fn": 386
+    },
+    {
+      "threshold": 0.5,
+      "accuracy": 0.9042126379137412,
+      "precision": 1.0,
+      "recall": 0.8082970893275343,
+      "f1_score": 0.8939870490286772,
+      "tp": 2416,
+      "tn": 2993,
+      "fp": 0,
+      "fn": 573
+    },
+    {
+      "threshold": 0.55,
+      "accuracy": 0.8428619190906051,
+      "precision": 1.0,
+      "recall": 0.6855135496821679,
+      "f1_score": 0.8134180230250099,
+      "tp": 2049,
+      "tn": 2993,
+      "fp": 0,
+      "fn": 940
+    },
+    {
+      "threshold": 0.6,
+      "accuracy": 0.7681377465730524,
+      "precision": 1.0,
+      "recall": 0.535965205754433,
+      "f1_score": 0.6978871705510782,
+      "tp": 1602,
+      "tn": 2993,
+      "fp": 0,
+      "fn": 1387
+    }
+  ],
+  "timestamp": "2026-01-05T20:40:59.016952",
+  "system_info": {
+    "platform": "Jetson Orin Nano 8GB",
+    "jetpack_version": "# R36 (release), REVISION: 4.7, GCID: 42132812, BOARD: generic, EABI: aarch64, DATE: Thu Sep 18 22:54:44 UTC 2025\n# KERNEL_VARIANT: oot\nTARGET_USERSPACE_LIB_DIR=nvidia\nTARGET_USERSPACE_LIB_DIR_PATH=usr/lib/aarch64-linux-gnu/nvidia",
+    "cuda_version": "Cuda compilation tools, release 12.6, V12.6.68",
+    "power_mode": "NV Power Mode: MAXN_SUPER\n2"
+  }
+}

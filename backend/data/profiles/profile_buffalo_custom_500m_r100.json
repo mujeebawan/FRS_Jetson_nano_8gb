@@ -1,0 +1,55 @@
+{
+  "profile_result": {
+    "avg_inference_time_ms": 19.38010640020366,
+    "min_inference_time_ms": 13.40749299924937,
+    "max_inference_time_ms": 51.22687500261236,
+    "std_inference_time_ms": 7.334053912487304,
+    "throughput_fps": 51.599303912464144,
+    "avg_cpu_utilization": 34.272286178843416,
+    "max_cpu_utilization": 42.22222222222223,
+    "avg_gpu_utilization": 74.96923076923078,
+    "max_gpu_utilization": 99.6,
+    "avg_ram_usage_mb": 4297.231971153846,
+    "max_ram_usage_mb": 4299.984375,
+    "avg_gpu_mem_usage_mb": 0,
+    "max_gpu_mem_usage_mb": 0,
+    "avg_power_watts": 9.823261538461539,
+    "max_power_watts": 11.835264,
+    "model_name": "buffalo_custom_500m_r100",
+    "input_size": [
+      640,
+      480
+    ],
+    "num_iterations": 50
+  },
+  "model_info": {
+    "detector": "SCRFD_500M",
+    "recognizer": "MBF (MobileFaceNet)",
+    "det_params": "0.5M",
+    "rec_params": "3.4M",
+    "total_params": "~4M",
+    "det_flops": "0.5G",
+    "rec_flops": "0.44G",
+    "embedding_dim": 512,
+    "input_size_det": [
+      640,
+      640
+    ],
+    "input_size_rec": [
+      112,
+      112
+    ]
+  },
+  "system_info": {
+    "device": "Jetson Orin Nano",
+    "jetpack_version": "Unknown",
+    "l4t_version": "R36 (release)",
+    "cuda_version": "12.6",
+    "cudnn_version": "CUDNN_PATCHLEVEL).3.0",
+    "tensorrt_version": "Unknown",
+    "power_mode": "MAXN_SUPER",
+    "max_freq_cpu": "1.73 GHz",
+    "max_freq_gpu": "Unknown"
+  },
+  "timestamp": "2026-01-06T14:08:15.564118"
+}

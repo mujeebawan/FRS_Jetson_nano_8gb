@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-PROJECT_DIR="/home/tempuser/Downloads/frs"
+PROJECT_DIR="/home/tempuser/Downloads/Frs_sec"
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 BACKEND_LOG="/tmp/frs_backend.log"
