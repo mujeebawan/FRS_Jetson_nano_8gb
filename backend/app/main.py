@@ -80,29 +80,17 @@ async def lifespan(app: FastAPI):
 
     # Initialize services
     from .services.camera import CameraService
-    from .services.stream import StreamManager
-    from .services.processor import FrameProcessor
     from .services.alerts import AlertManager
-    from .core import FaceDetector, FaceRecognizer
+    from .core.recognizer import FaceRecognizer
 
     app.state.camera = CameraService()
-    app.state.stream = StreamManager(
-        frame_skip=settings.frame_skip,
-        camera=primary_camera  # Use camera from database
-    )
-    app.state.detector = FaceDetector(
-        model_name=settings.recognition_model,
-        min_confidence=settings.detection_confidence,
-        use_gpu=settings.use_gpu,
-        use_fp16=settings.use_fp16  # Use FP16 models for faster GPU inference
-    )
+
+    # Initialize recognizer first (needed by DeepStream)
     app.state.recognizer = FaceRecognizer(
         embeddings_dir=settings.embeddings_dir,
         threshold=settings.recognition_threshold,
         model_name=settings.recognition_model
     )
-
-    # Load saved embeddings
     app.state.recognizer.load()
     logger.info(f"Recognizer loaded {app.state.recognizer.count} persons")
 
@@ -130,25 +118,17 @@ async def lifespan(app: FastAPI):
         """Callback when face is detected - creates alert with cooldown."""
         from .api.routes.alerts import broadcast_alert_sync
         try:
-            # Get a database session
             db = next(get_db())
             try:
-                # Check if person is recognized
                 person = None
                 similarity = None
                 if detection.embedding is not None:
                     result = app.state.recognizer.identify(detection.embedding)
                     if result and result.is_match:
-                        # Known person - look up in database
                         person = db.query(Person).filter(Person.name == result.person_name).first()
                         similarity = result.similarity
                         logger.info(f"Face recognized: {result.person_name} (sim={result.similarity:.2f})")
-                    else:
-                        logger.debug(f"Face not recognized (no match)")
-                else:
-                    logger.debug(f"Face detected but no embedding")
 
-                # Create alert (AlertManager handles cooldown internally)
                 alert = app.state.alert_manager.create_alert(
                     db=db,
                     event_type="face_detected",
@@ -159,12 +139,10 @@ async def lifespan(app: FastAPI):
                     bbox=detection.bbox if detection else None
                 )
 
-                # Broadcast to WebSocket subscribers (thread-safe sync version)
                 if alert:
-                    logger.info(f"Alert created and broadcasting: {alert.id} - {alert.person_name}")
+                    logger.info(f"Alert created: {alert.id} - {alert.person_name}")
                     broadcast_alert_sync(alert)
 
-                    # Trigger video clip recording for the alert (if enabled)
                     if app.state.video_recorder:
                         try:
                             app.state.video_recorder.trigger_recording(
@@ -173,24 +151,59 @@ async def lifespan(app: FastAPI):
                             )
                         except Exception as ve:
                             logger.error(f"Video recording trigger failed: {ve}")
-
             finally:
                 db.close()
         except Exception as e:
             logger.error(f"Alert callback error: {e}", exc_info=True)
 
-    # Connect frame processor object to stream for face detection
-    # Pass the object (not function) so stream can call draw_overlay() for non-detection frames
-    app.state.processor = FrameProcessor(
-        detector=app.state.detector,
-        recognizer=app.state.recognizer,
-        alert_callback=alert_callback
-    )
-    app.state.stream.set_processor(app.state.processor)
-    logger.info("Frame processor connected to stream with alert callback")
+    # Try DeepStream first, fall back to OpenCV stream
+    use_deepstream = True
+    try:
+        from .services.deepstream_stream import DeepStreamManager, PYDS_AVAILABLE
+        if not PYDS_AVAILABLE:
+            raise ImportError("pyds not available")
 
-    # Connect video recorder to stream
-    app.state.stream.set_video_recorder(app.state.video_recorder)
+        app.state.stream = DeepStreamManager(
+            camera=primary_camera,
+            frame_skip=settings.frame_skip,
+            recognizer=app.state.recognizer,
+            alert_callback=alert_callback
+        )
+        app.state.detector = None  # Not needed with DeepStream
+        app.state.processor = None  # Not needed with DeepStream
+        logger.info("Using DeepStream pipeline (PGIE+SGIE)")
+
+    except Exception as e:
+        logger.warning(f"DeepStream not available ({e}), falling back to OpenCV")
+        use_deepstream = False
+
+        from .services.stream import StreamManager
+        from .services.processor import FrameProcessor
+        from .core import FaceDetector
+
+        app.state.detector = FaceDetector(
+            model_name=settings.recognition_model,
+            min_confidence=settings.detection_confidence,
+            use_gpu=settings.use_gpu,
+            use_fp16=settings.use_fp16
+        )
+
+        app.state.stream = StreamManager(
+            frame_skip=settings.frame_skip,
+            camera=primary_camera
+        )
+
+        app.state.processor = FrameProcessor(
+            detector=app.state.detector,
+            recognizer=app.state.recognizer,
+            alert_callback=alert_callback
+        )
+        app.state.stream.set_processor(app.state.processor)
+        logger.info("Using OpenCV stream with ONNX detection")
+
+    # Connect video recorder to stream (if available)
+    if hasattr(app.state.stream, 'set_video_recorder') and app.state.video_recorder:
+        app.state.stream.set_video_recorder(app.state.video_recorder)
 
     # Get camera info
     info = await app.state.camera.get_device_info()

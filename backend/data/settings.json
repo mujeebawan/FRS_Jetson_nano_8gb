@@ -1,7 +1,7 @@
 {
   "detection_confidence": 0.5,
   "recognition_threshold": 0.4,
-  "frame_skip": 1,
+  "frame_skip": 3,
   "enable_motion_trigger": false,
   "alert_cooldown_seconds": 10,
   "recognition_model": "buffalo_l",
