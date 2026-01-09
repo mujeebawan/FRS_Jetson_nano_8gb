@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { personsApi, streamApi, getPersonImageUrl } from '../services/api';
+import { personsApi, streamApi, camerasApi, getPersonImageUrl } from '../services/api';
 import { Trash2, UserPlus, Image, Camera, X, CameraIcon, RefreshCw, Search, User, Calendar, Eye, Shield, AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 
@@ -30,6 +30,13 @@ interface PersonDetails {
   has_reference_image: boolean;
 }
 
+interface CameraInfo {
+  id: number;
+  name: string;
+  ip_address: string;
+  enabled: boolean;
+}
+
 export function PersonList() {
   const [persons, setPersons] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +65,10 @@ export function PersonList() {
   // Camera capture state - capture first, then fill details
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [captureStep, setCaptureStep] = useState<'preview' | 'details'>('preview');
+
+  // Camera selection for enrollment
+  const [cameras, setCameras] = useState<CameraInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<number | null>(null);
 
   // Debounce search
   useEffect(() => {
@@ -171,6 +182,20 @@ export function PersonList() {
     } catch (err) {
       console.log('Stream may already be running');
     }
+
+    // Fetch available cameras
+    try {
+      const response = await camerasApi.list(true); // Only enabled cameras
+      const enabledCameras = response.data;
+      setCameras(enabledCameras);
+      // Default to first camera
+      if (enabledCameras.length > 0) {
+        setSelectedCameraId(enabledCameras[0].id);
+      }
+    } catch (err) {
+      console.error('Failed to load cameras:', err);
+    }
+
     setCapturedImage(null);
     setCaptureStep('preview');
     setStreamKey(Date.now());
@@ -200,6 +225,11 @@ export function PersonList() {
       return;
     }
 
+    if (!selectedCameraId) {
+      showMessage('error', 'Please select a camera');
+      return;
+    }
+
     try {
       setEnrolling(true);
       setMessage(null);
@@ -209,7 +239,8 @@ export function PersonList() {
         enrollIdCard.trim() || undefined,
         enrollCase.trim() || undefined,
         watchlistStatus,
-        threatLevel
+        threatLevel,
+        selectedCameraId  // Pass selected camera ID
       );
       showMessage('success', `Successfully enrolled ${enrollName}!`);
 
@@ -398,11 +429,33 @@ export function PersonList() {
               {captureStep === 'preview' ? (
                 /* Step 1: Live Preview - Capture */
                 <>
+                  {/* Camera Selector */}
+                  <div className="camera-selector">
+                    <label>Select Camera:</label>
+                    <select
+                      value={selectedCameraId || ''}
+                      onChange={(e) => {
+                        setSelectedCameraId(Number(e.target.value));
+                        setStreamKey(Date.now()); // Refresh stream when camera changes
+                      }}
+                      className="camera-select"
+                    >
+                      {cameras.map((cam) => (
+                        <option key={cam.id} value={cam.id}>
+                          {cam.name} ({cam.ip_address})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="camera-preview">
                     <img
                       key={streamKey}
                       ref={streamRef}
-                      src={`${streamApi.getRawMjpegUrl()}?t=${streamKey}`}
+                      src={selectedCameraId
+                        ? `${streamApi.getCameraMjpegUrl(selectedCameraId)}?t=${streamKey}`
+                        : `${streamApi.getRawMjpegUrl()}?t=${streamKey}`
+                      }
                       alt="Camera Preview"
                       className="camera-stream"
                     />
@@ -414,7 +467,9 @@ export function PersonList() {
                       <RefreshCw size={18} />
                     </button>
                   </div>
-                  <p className="capture-hint">Position the person's face clearly, then click Capture</p>
+                  <p className="capture-hint">
+                    Position the person's face clearly in <strong>{cameras.find(c => c.id === selectedCameraId)?.name || 'camera'}</strong>, then click Capture
+                  </p>
                 </>
               ) : (
                 /* Step 2: Show captured image + Enter details */

@@ -21,30 +21,44 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def seed_initial_camera(db):
-    """Seed initial camera if no cameras exist."""
+def seed_initial_cameras(db):
+    """Seed initial cameras if no cameras exist."""
     from .models.database import Camera
 
     # Check if any cameras exist
     camera_count = db.query(Camera).count()
     if camera_count == 0:
-        # Create Camera 1 as seed data
+        # Create Camera 1
         camera1 = Camera(
             name="Camera 1",
             ip_address="192.168.1.70",
             port=554,
             username="admin",
             password="Admin@123",
-            stream_quality="third",  # 480p - recommended for AI
+            stream_quality="sub",  # 720p 25fps
             enabled=True,
             detection_enabled=True,
             location="Main Entrance",
-            notes="Initial camera - Hikvision DS-2CD7A47EWD-XZS"
+            notes="Hikvision DS-2CD7A47EWD-XZS"
+        )
+        # Create Camera 2
+        camera2 = Camera(
+            name="Camera 2",
+            ip_address="192.168.1.72",
+            port=554,
+            username="admin",
+            password="Admin@123",
+            stream_quality="sub",  # 720p 25fps
+            enabled=True,
+            detection_enabled=True,
+            location="Back Entrance",
+            notes="Hikvision Camera 2"
         )
         db.add(camera1)
+        db.add(camera2)
         db.commit()
-        logger.info(f"Seeded initial camera: {camera1.name} ({camera1.ip_address})")
-        return 1
+        logger.info(f"Seeded cameras: {camera1.name}, {camera2.name}")
+        return 2
     return camera_count
 
 
@@ -65,7 +79,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     primary_camera = None
     try:
-        camera_count = seed_initial_camera(db)
+        camera_count = seed_initial_cameras(db)
         enabled_cameras = db.query(Camera).filter(Camera.enabled == True).all()
         logger.info(f"Cameras configured: {camera_count} total, {len(enabled_cameras)} enabled")
         for cam in enabled_cameras:
@@ -83,12 +97,22 @@ async def lifespan(app: FastAPI):
     from .services.alerts import AlertManager
     from .core.recognizer import FaceRecognizer
 
-    app.state.camera = CameraService()
+    # Create camera services for all enabled cameras (for PTZ control)
+    app.state.cameras = {}
+    for cam in enabled_cameras:
+        app.state.cameras[cam.id] = CameraService(
+            ip=cam.ip_address,
+            username=cam.username,
+            password=cam.password
+        )
+    # Primary camera (backward compatibility)
+    app.state.camera = app.state.cameras.get(enabled_cameras[0].id) if enabled_cameras else CameraService()
 
     # Initialize recognizer first (needed by DeepStream)
     app.state.recognizer = FaceRecognizer(
         embeddings_dir=settings.embeddings_dir,
         threshold=settings.recognition_threshold,
+        use_gpu=settings.faiss_use_gpu,
         model_name=settings.recognition_model
     )
     app.state.recognizer.load()
@@ -163,15 +187,25 @@ async def lifespan(app: FastAPI):
         if not PYDS_AVAILABLE:
             raise ImportError("pyds not available")
 
+        # Pass all enabled cameras for multi-camera pipeline
         app.state.stream = DeepStreamManager(
-            camera=primary_camera,
+            cameras=enabled_cameras,  # All enabled cameras
             frame_skip=settings.frame_skip,
             recognizer=app.state.recognizer,
             alert_callback=alert_callback
         )
-        app.state.detector = None  # Not needed with DeepStream
+
+        # Initialize detector for enrollment (uses InsightFace ONNX, separate from DeepStream TRT)
+        from .core import FaceDetector
+        app.state.detector = FaceDetector(
+            model_name=settings.recognition_model,
+            min_confidence=settings.detection_confidence,
+            use_gpu=settings.use_gpu,
+            use_fp16=settings.use_fp16
+        )
         app.state.processor = None  # Not needed with DeepStream
-        logger.info("Using DeepStream pipeline (PGIE+SGIE)")
+        logger.info(f"Using DeepStream pipeline with {len(enabled_cameras)} cameras")
+        logger.info("Enrollment detector initialized (InsightFace ONNX)")
 
     except Exception as e:
         logger.warning(f"DeepStream not available ({e}), falling back to OpenCV")

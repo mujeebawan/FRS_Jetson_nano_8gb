@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { camerasApi, streamApi } from '../services/api';
-import { Grid, Maximize2, Video, VideoOff, RefreshCw, Check } from 'lucide-react';
+import { Grid, Maximize2, Video, VideoOff, RefreshCw } from 'lucide-react';
 
 interface Camera {
   id: number;
@@ -116,13 +116,13 @@ export function MultiCameraView() {
     setViewMode('grid');
   };
 
-  // Get camera snapshot URL
-  const getCameraSnapshotUrl = (camera: Camera) => {
+  // Get camera snapshot URL (for future use)
+  const _getCameraSnapshotUrl = (camera: Camera) => {
     return camerasApi.snapshot(camera.id);
   };
 
-  // Calculate grid layout based on camera count
-  const getGridClass = () => {
+  // Calculate grid layout based on camera count (for future use)
+  const _getGridClass = () => {
     const count = cameras.length;
     if (count <= 1) return 'grid-1x1';
     if (count <= 2) return 'grid-2x1';
@@ -130,6 +130,10 @@ export function MultiCameraView() {
     if (count <= 6) return 'grid-3x2';
     return 'grid-4x2';
   };
+
+  // Suppress unused variable warnings
+  void _getCameraSnapshotUrl;
+  void _getGridClass;
 
   if (loading) {
     return (
@@ -161,7 +165,7 @@ export function MultiCameraView() {
     );
   }
 
-  // Fullscreen view
+  // Fullscreen view - show single camera
   if (viewMode === 'fullscreen' && fullscreenCamera) {
     return (
       <div className="multi-camera-view fullscreen-mode">
@@ -180,24 +184,19 @@ export function MultiCameraView() {
           </button>
         </div>
         <div className="fullscreen-stream">
-          {streamStatus?.running && activeCamera === fullscreenCamera.id ? (
-            <img
-              src={streamApi.getMjpegUrl()}
-              alt={fullscreenCamera.name}
-              className="stream-image"
-            />
-          ) : (
-            <div className="stream-placeholder">
-              <Video size={48} />
-              <p>Connecting to {fullscreenCamera.name}...</p>
-            </div>
-          )}
+          <img
+            key={`fullscreen-${fullscreenCamera.id}`}
+            src={`${streamApi.getCameraMjpegUrl(fullscreenCamera.id)}?fs=1`}
+            alt={fullscreenCamera.name}
+            className="stream-image"
+            style={{ width: '100%', height: 'auto', maxHeight: '80vh', objectFit: 'contain' }}
+          />
         </div>
       </div>
     );
   }
 
-  // Grid view
+  // Grid view - Show combined tiled stream from DeepStream
   return (
     <div className="multi-camera-view">
       <div className="view-header">
@@ -207,80 +206,49 @@ export function MultiCameraView() {
         </h3>
         <div className="view-controls">
           <span className="camera-count">{cameras.length} camera{cameras.length !== 1 ? 's' : ''}</span>
+          {streamStatus?.running && (
+            <span className="fps-badge">{streamStatus.fps.toFixed(1)} FPS</span>
+          )}
           <button onClick={loadData} title="Refresh cameras">
             <RefreshCw size={18} />
           </button>
         </div>
       </div>
 
-      <div className={`camera-grid ${getGridClass()}`}>
-        {cameras.map((camera) => (
-          <div
-            key={camera.id}
-            className={`camera-tile ${camera.id === activeCamera ? 'active' : ''} ${switching && camera.id === activeCamera ? 'switching' : ''}`}
-            onClick={() => switchCamera(camera)}
-          >
-            <div className="tile-header">
-              <span className="camera-name">{camera.name}</span>
-              {camera.id === activeCamera && (
-                <span className="active-badge" title="Currently streaming">
-                  <Check size={14} />
-                  Live
-                </span>
-              )}
-            </div>
-
-            <div className="tile-preview">
-              {camera.id === activeCamera && streamStatus?.running ? (
-                <img
-                  src={streamApi.getMjpegUrl()}
-                  alt={camera.name}
-                  className="preview-stream"
-                />
-              ) : (
-                <img
-                  src={getCameraSnapshotUrl(camera)}
-                  alt={camera.name}
-                  className="preview-snapshot"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              )}
-              {switching && (
-                <div className="switching-overlay">
-                  <RefreshCw size={24} className="spin" />
-                  Switching...
-                </div>
-              )}
-            </div>
-
-            <div className="tile-footer">
-              <span className="camera-location">{camera.location || camera.ip_address}</span>
+      {/* Combined tiled stream - shows all cameras in one view */}
+      <div className="combined-stream-container">
+        <img
+          src={`${streamApi.getMjpegUrl()}?multi=1`}
+          alt="Multi-Camera Feed"
+          className="combined-stream"
+          style={{ width: '100%', height: 'auto', maxHeight: '75vh', objectFit: 'contain', background: '#1a1a2e' }}
+        />
+        <div className="camera-labels">
+          {cameras.map((camera, index) => (
+            <div
+              key={camera.id}
+              className={`camera-label ${index === 0 ? 'left' : 'right'}`}
+              onClick={() => enterFullscreen(camera)}
+            >
+              <span className="label-name">{camera.name}</span>
               <span className={`online-status ${camera.is_online ? 'online' : 'offline'}`}>
                 {camera.is_online ? 'Online' : 'Offline'}
               </span>
-              <button
-                className="fullscreen-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  enterFullscreen(camera);
-                }}
-                title="Fullscreen"
-              >
-                <Maximize2 size={16} />
-              </button>
+              <Maximize2 size={14} className="fullscreen-icon" />
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
-      {activeCamera && streamStatus?.camera && (
+      {streamStatus && (
         <div className="active-stream-info">
           <Video size={16} />
           <span>
-            Streaming: <strong>{streamStatus.camera.name}</strong>
-            {' '}({streamStatus.camera.stream_quality}) - {streamStatus.fps.toFixed(1)} FPS
+            {streamStatus.running ? (
+              <>Streaming: <strong>{cameras.length} cameras</strong> - {streamStatus.fps.toFixed(1)} FPS</>
+            ) : (
+              <>Stream starting...</>
+            )}
           </span>
         </div>
       )}

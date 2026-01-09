@@ -15,8 +15,11 @@ export const streamApi = {
   stop: () => api.get('/stream/stop'),
   status: () => api.get('/stream/status'),
   getBaseUrl: () => API_BASE_URL,
+  // Full tiled view (all cameras combined)
   getMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg`,
   getWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws`,
+  // Single camera stream (cropped from tiled view)
+  getCameraMjpegUrl: (cameraId: number) => `${API_BASE_URL}/stream/mjpeg/camera/${cameraId}`,
   // Raw stream (no overlays/bounding boxes) for enrollment
   getRawMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg/raw`,
   getRawWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws/raw`,
@@ -41,12 +44,13 @@ export const personsApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
-  enrollFromCamera: (name: string, idCard?: string, caseInfo?: string, watchlistStatus?: string, threatLevel?: string) => {
+  enrollFromCamera: (name: string, idCard?: string, caseInfo?: string, watchlistStatus?: string, threatLevel?: string, cameraId?: number) => {
     const params = new URLSearchParams({ name });
     if (idCard) params.append('id_card', idCard);
     if (caseInfo) params.append('case', caseInfo);
     if (watchlistStatus) params.append('watchlist_status', watchlistStatus);
     if (threatLevel) params.append('threat_level', threatLevel);
+    if (cameraId !== undefined) params.append('camera_id', cameraId.toString());
     return api.post(`/persons/enroll-from-camera?${params.toString()}`);
   },
   addImage: (personId: number, image: File) => {
@@ -162,12 +166,17 @@ export const systemApi = {
   getModels: () => api.get('/system/models'),
   changeModel: (model: string, useFp16: boolean = true) =>
     api.post('/system/models/change', null, { params: { model, use_fp16: useFp16 } }),
-  // Camera PTZ zoom control
-  zoomIn: (speed: number = 50) => api.post('/system/camera/zoom', null, { params: { action: 'in', speed } }),
-  zoomOut: (speed: number = 50) => api.post('/system/camera/zoom', null, { params: { action: 'out', speed } }),
-  zoomStop: () => api.post('/system/camera/zoom', null, { params: { action: 'stop' } }),
-  zoomSet: (level: number) => api.post('/system/camera/zoom/set', null, { params: { level } }),
-  ptzStatus: () => api.get('/system/camera/ptz/status'),
+  // Camera PTZ zoom control (optional camera_id for multi-camera support)
+  zoomIn: (speed: number = 50, cameraId?: number) =>
+    api.post('/system/camera/zoom', null, { params: { action: 'in', speed, camera_id: cameraId } }),
+  zoomOut: (speed: number = 50, cameraId?: number) =>
+    api.post('/system/camera/zoom', null, { params: { action: 'out', speed, camera_id: cameraId } }),
+  zoomStop: (cameraId?: number) =>
+    api.post('/system/camera/zoom', null, { params: { action: 'stop', camera_id: cameraId } }),
+  zoomSet: (level: number, cameraId?: number) =>
+    api.post('/system/camera/zoom/set', null, { params: { level, camera_id: cameraId } }),
+  ptzStatus: (cameraId?: number) =>
+    api.get('/system/camera/ptz/status', { params: cameraId ? { camera_id: cameraId } : undefined }),
 };
 
 export default api;

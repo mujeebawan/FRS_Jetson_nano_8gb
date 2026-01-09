@@ -73,6 +73,7 @@ def generate_embeddings_for_all_models(
             other_recognizer = FaceRecognizer(
                 embeddings_dir=str(embeddings_dir),
                 threshold=settings.recognition_threshold,
+                use_gpu=settings.faiss_use_gpu,
                 model_name=model
             )
             other_recognizer.load()
@@ -398,6 +399,7 @@ def remove_person_from_all_models(person_id: int, current_recognizer):
             other_recognizer = FaceRecognizer(
                 embeddings_dir=str(embeddings_dir),
                 threshold=settings.recognition_threshold,
+                use_gpu=settings.faiss_use_gpu,
                 model_name=model
             )
             other_recognizer.load()
@@ -470,7 +472,8 @@ async def enroll_from_camera(
     case: str = None,
     watchlist_status: str = "normal",
     threat_level: str = "none",
-    guard_prompt: str = None
+    guard_prompt: str = None,
+    camera_id: int = None
 ):
     """
     Enroll a new person by capturing from live camera stream.
@@ -482,6 +485,7 @@ async def enroll_from_camera(
         watchlist_status: Status - normal, criminal, suspect, banned, vip (default: normal)
         threat_level: Threat level - none, low, medium, high, critical (default: none)
         guard_prompt: Custom guard action prompt (optional)
+        camera_id: ID of camera to capture from (optional, default uses first camera)
     """
     stream = request.app.state.stream
     detector = request.app.state.detector
@@ -490,8 +494,21 @@ async def enroll_from_camera(
     if not stream.is_running:
         raise HTTPException(status_code=400, detail="Stream not running. Start stream first.")
 
-    # Get latest RAW frame from stream (without overlays for clean enrollment)
-    frame_data = stream.get_latest_raw_frame()
+    # Get frame from specific camera or default to first camera
+    if camera_id is not None:
+        # Get camera index from database ID
+        camera_index = stream.get_camera_index_by_id(camera_id)
+        if camera_index is None:
+            raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+        frame_data = stream.get_camera_raw_frame(camera_index)
+        if frame_data is None:
+            raise HTTPException(status_code=400, detail=f"No frame available from camera {camera_id}")
+    else:
+        # Default: use first camera (index 0)
+        frame_data = stream.get_camera_raw_frame(0)
+        if frame_data is None:
+            # Fallback to full frame
+            frame_data = stream.get_latest_raw_frame()
     if frame_data is None:
         raise HTTPException(status_code=400, detail="No frame available")
 

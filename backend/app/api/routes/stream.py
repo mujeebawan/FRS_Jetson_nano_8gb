@@ -29,14 +29,26 @@ async def stop_stream(request: Request):
 async def stream_status(request: Request):
     """Get stream status including camera info and motion detection stats."""
     stream = request.app.state.stream
+
+    # Get full stats from DeepStream (includes per-camera FPS)
+    stats = stream.get_stats() if hasattr(stream, 'get_stats') else {}
+
     response = {
         "running": stream.is_running,
-        "fps": stream.fps,
+        "fps": round(stream.fps, 1),
         "subscribers": stream.subscriber_count,
         "motion_active": stream.motion_active,
+        "num_cameras": stats.get("num_cameras", 1),
+        "faces_detected": stats.get("faces_detected", 0),
+        "faces_matched": stats.get("faces_matched", 0),
+        "pipeline": stats.get("pipeline", "Unknown")
     }
 
-    # Include current camera info
+    # Include all cameras with per-camera FPS
+    if "cameras" in stats:
+        response["cameras"] = stats["cameras"]
+
+    # Include current camera info (backward compatibility)
     if stream.camera:
         response["camera"] = {
             "id": stream.camera_id,
@@ -127,7 +139,7 @@ async def get_snapshot(request: Request):
 
 @router.get("/mjpeg")
 async def mjpeg_stream(request: Request):
-    """MJPEG stream for direct browser viewing."""
+    """MJPEG stream for direct browser viewing (full tiled view with all cameras)."""
     stream = request.app.state.stream
 
     if not stream.is_running:
@@ -145,6 +157,45 @@ async def mjpeg_stream(request: Request):
                         b"--frame\r\n"
                         b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
                     )
+                except asyncio.TimeoutError:
+                    continue
+        finally:
+            stream.unsubscribe(queue)
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@router.get("/mjpeg/camera/{camera_id}")
+async def mjpeg_camera_stream(camera_id: int, request: Request):
+    """MJPEG stream for a single camera (cropped from tiled view)."""
+    stream = request.app.state.stream
+
+    if not stream.is_running:
+        stream.start()
+
+    # Get camera index from database ID
+    camera_index = stream.get_camera_index_by_id(camera_id)
+    if camera_index is None:
+        raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+
+    async def generate():
+        queue = stream.subscribe()
+        try:
+            while True:
+                try:
+                    # Wait for new frame from subscription (synchronized)
+                    frame_data = await asyncio.wait_for(queue.get(), timeout=5.0)
+                    # Crop to single camera
+                    camera_frame = stream.get_camera_frame(camera_index)
+                    if camera_frame and camera_frame.frame is not None:
+                        jpeg = stream.encode_jpeg(camera_frame.frame, quality=65)
+                        yield (
+                            b"--frame\r\n"
+                            b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                        )
                 except asyncio.TimeoutError:
                     continue
         finally:
