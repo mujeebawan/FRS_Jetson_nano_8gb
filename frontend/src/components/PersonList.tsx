@@ -205,8 +205,11 @@ export function PersonList() {
   // Capture snapshot from stream - just get the image, don't enroll yet
   const handleCaptureSnapshot = async () => {
     try {
-      // Get current frame as snapshot (getBaseUrl already includes /api)
-      const response = await fetch(`${streamApi.getBaseUrl()}/stream/snapshot`);
+      // Get current frame as snapshot from selected camera (raw, no overlays)
+      const snapshotUrl = selectedCameraId
+        ? streamApi.getCameraSnapshotUrl(selectedCameraId)
+        : streamApi.getSnapshotUrl();
+      const response = await fetch(`${snapshotUrl}?t=${Date.now()}`);
       if (!response.ok) throw new Error('Failed to capture snapshot');
       const blob = await response.blob();
       const imageUrl = URL.createObjectURL(blob);
@@ -453,7 +456,7 @@ export function PersonList() {
                       key={streamKey}
                       ref={streamRef}
                       src={selectedCameraId
-                        ? `${streamApi.getCameraMjpegUrl(selectedCameraId)}?t=${streamKey}`
+                        ? `${streamApi.getCameraRawMjpegUrl(selectedCameraId)}?t=${streamKey}`
                         : `${streamApi.getRawMjpegUrl()}?t=${streamKey}`
                       }
                       alt="Camera Preview"

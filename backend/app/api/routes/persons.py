@@ -301,17 +301,6 @@ async def enroll_person(
     # Save embeddings to file
     recognizer.save()
 
-    # Generate embeddings for other models (in background-like manner)
-    # This ensures the person is enrolled in all available models
-    generate_embeddings_for_all_models(
-        detector=detector,
-        current_recognizer=recognizer,
-        person_id=person_id,
-        person_name=name,
-        image=img_bgr,
-        current_embedding=detection.embedding
-    )
-
     # Save extended person data (legacy JSON)
     persons_data = load_persons_data()
     persons_data[str(person_id)] = {
@@ -495,20 +484,24 @@ async def enroll_from_camera(
         raise HTTPException(status_code=400, detail="Stream not running. Start stream first.")
 
     # Get frame from specific camera or default to first camera
+    # Use direct capture for enrollment (clean frame, not from tiled detection pipeline)
     if camera_id is not None:
         # Get camera index from database ID
         camera_index = stream.get_camera_index_by_id(camera_id)
         if camera_index is None:
             raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
-        frame_data = stream.get_camera_raw_frame(camera_index)
+        # Use direct RTSP capture for enrollment (cleaner, full resolution)
+        frame_data = stream.get_camera_raw_frame(camera_index, use_direct_capture=True)
         if frame_data is None:
             raise HTTPException(status_code=400, detail=f"No frame available from camera {camera_id}")
     else:
-        # Default: use first camera (index 0)
-        frame_data = stream.get_camera_raw_frame(0)
+        # Default: use first camera (index 0) with direct capture
+        frame_data = stream.get_camera_raw_frame(0, use_direct_capture=True)
         if frame_data is None:
-            # Fallback to full frame
-            frame_data = stream.get_latest_raw_frame()
+            # Fallback to tiled frame crop
+            frame_data = stream.get_camera_raw_frame(0, use_direct_capture=False)
+            if frame_data is None:
+                frame_data = stream.get_latest_raw_frame()
     if frame_data is None:
         raise HTTPException(status_code=400, detail="No frame available")
 
@@ -600,17 +593,6 @@ async def enroll_from_camera(
 
     # Save embeddings
     recognizer.save()
-
-    # Generate embeddings for other models
-    # Use the full frame for better detection with other models
-    generate_embeddings_for_all_models(
-        detector=detector,
-        current_recognizer=recognizer,
-        person_id=person_id,
-        person_name=name,
-        image=frame_data.frame,
-        current_embedding=detection.embedding
-    )
 
     # Save extended person data (legacy)
     persons_data = load_persons_data()

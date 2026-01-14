@@ -70,7 +70,8 @@ class AlertManager:
         alert_id: int,
         bbox: Optional[tuple] = None,
         person_name: Optional[str] = None,
-        threat_level: Optional[str] = None
+        threat_level: Optional[str] = None,
+        camera_name: Optional[str] = None
     ) -> Optional[str]:
         """
         Save full frame snapshot with face highlighted for alert.
@@ -83,6 +84,7 @@ class AlertManager:
             bbox: Face bounding box (x, y, width, height) to highlight
             person_name: Name to display on the box
             threat_level: Threat level for color coding
+            camera_name: Name of camera that captured the frame
 
         Returns:
             Path to saved snapshot, or None if failed
@@ -93,10 +95,29 @@ class AlertManager:
         try:
             # Make a copy to draw on
             annotated_frame = frame.copy()
+            frame_h, frame_w = annotated_frame.shape[:2]
+
+            # Draw camera name at top-left corner
+            if camera_name:
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                cam_label = f"Camera: {camera_name}"
+                font_scale = 0.7
+                thickness = 2
+                (text_w, text_h), _ = cv2.getTextSize(cam_label, font, font_scale, thickness)
+
+                # Draw background rectangle
+                cv2.rectangle(annotated_frame, (5, 5), (text_w + 15, text_h + 15), (0, 0, 0), -1)
+                cv2.putText(annotated_frame, cam_label, (10, text_h + 10), font, font_scale, (255, 255, 255), thickness)
 
             # Draw face highlight box if bbox provided
             if bbox is not None:
                 x, y, w, h = bbox
+
+                # Ensure bbox is within frame bounds
+                x = max(0, min(x, frame_w - 1))
+                y = max(0, min(y, frame_h - 1))
+                w = min(w, frame_w - x)
+                h = min(h, frame_h - y)
 
                 # Color based on threat level (BGR format)
                 if threat_level == 'critical':
@@ -255,7 +276,9 @@ class AlertManager:
         confidence: Optional[float] = None,
         similarity_score: Optional[float] = None,
         frame=None,
-        bbox: Optional[tuple] = None
+        bbox: Optional[tuple] = None,
+        camera_id: Optional[int] = None,
+        camera_name: Optional[str] = None
     ) -> Optional[Alert]:
         """
         Create and save alert to database.
@@ -266,8 +289,10 @@ class AlertManager:
             person: Matched person (None for unknown)
             confidence: Detection confidence
             similarity_score: Face similarity score
-            frame: Video frame for snapshot
+            frame: Video frame for snapshot (single camera frame, not tiled)
             bbox: Face bounding box (x, y, w, h) for highlighting
+            camera_id: ID of camera that detected the face
+            camera_name: Name of camera that detected the face
 
         Returns:
             Created Alert object, or None if not created
@@ -298,7 +323,9 @@ class AlertManager:
                 watchlist_status=watchlist_status,
                 displayed_prompt=displayed_prompt,
                 guard_verified=False,
-                acknowledged=False
+                acknowledged=False,
+                camera_id=camera_id,
+                camera_name=camera_name
             )
 
             db.add(alert)
@@ -311,7 +338,8 @@ class AlertManager:
                     alert.id,
                     bbox=bbox,
                     person_name=person.name if person else "Unknown",
-                    threat_level=threat_level
+                    threat_level=threat_level,
+                    camera_name=camera_name
                 )
                 alert.snapshot_path = snapshot_path
 

@@ -15,6 +15,9 @@ interface Alert {
   confidence: number;
   acknowledged: boolean;
   snapshot_path: string | null;
+  // Camera info
+  camera_id?: number;
+  camera_name?: string;
   // Extended fields
   similarity_score?: number;
   threat_level?: string;
@@ -331,6 +334,14 @@ export function AlertList({ fullPage = false }: AlertListProps) {
               <div className="modal-guard-prompt">
                 <Shield size={18} />
                 <span>{modalAlert.displayed_prompt}</span>
+              </div>
+            )}
+
+            {/* Camera Info */}
+            {modalAlert.camera_name && (
+              <div className="modal-camera-info">
+                <Video size={16} />
+                <span>Detected on: <strong>{modalAlert.camera_name}</strong></span>
               </div>
             )}
 

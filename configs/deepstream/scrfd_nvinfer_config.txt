@@ -8,20 +8,22 @@ net-scale-factor=0.00392156862745098
 offsets=0;0;0
 model-color-format=0
 
-# TensorRT engine with batch support (1-8 batch)
-model-engine-file=/home/tempuser/Downloads/Frs_sec/models/tensorrt/scrfd_10g_batch.engine
+# TensorRT engine with batch=2 (pre-built for 2 cameras)
+# Use the auto-rebuilt engine for proper batch support
+model-engine-file=/home/tempuser/Downloads/Frs_sec/models/tensorrt/det_10g_dynamic.onnx_b2_gpu0_fp16.engine
 onnx-file=/home/tempuser/Downloads/Frs_sec/models/tensorrt/det_10g_dynamic.onnx
 
 # Input dimensions (640x640 SCRFD input)
 infer-dims=3;640;640
 
-# Batch size for nvstreammux
-batch-size=4
+# Batch size (matches number of cameras)
+batch-size=2
 
 # FP16 inference (network-mode: 0=FP32, 1=INT8, 2=FP16)
 network-mode=2
 
-# Process every frame (interval=0 means every frame)
+# Process every frame for now (interval=0) - tracker will reduce re-recognition
+# Set interval=2-5 once PGIE is working to improve FPS
 interval=0
 
 # Network type: 100 = Other/Custom (for custom post-processing)
@@ -43,6 +45,9 @@ workspace-size=2048
 
 # Process on GPU
 process-mode=1
+
+# On Jetson, use GPU for scaling (recommended when GPU isn't at 100%)
+scaling-compute-hw=1
 
 [class-attrs-all]
 pre-cluster-threshold=0.3

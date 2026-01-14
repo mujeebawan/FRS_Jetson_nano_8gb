@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { streamApi, systemApi } from '../services/api';
-import { Play, Pause, RefreshCw, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { streamApi, systemApi, camerasApi } from '../services/api';
+import { Play, Pause, RefreshCw, ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
+
+interface Camera {
+  id: number;
+  name: string;
+  ip_address: string;
+  enabled: boolean;
+}
 
 interface LiveStreamProps {
   autoStart?: boolean;
+  cameraId?: number;  // Optional: specific camera to display
 }
 
-export function LiveStream({ autoStart = true }: LiveStreamProps) {
+export function LiveStream({ autoStart = true, cameraId }: LiveStreamProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -15,6 +23,25 @@ export function LiveStream({ autoStart = true }: LiveStreamProps) {
   const [cameraZoom, setCameraZoom] = useState(0);
   const [isZooming, setIsZooming] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [cameras, setCameras] = useState<Camera[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<number | null>(cameraId || null);
+
+  // Load available cameras
+  useEffect(() => {
+    const loadCameras = async () => {
+      try {
+        const response = await camerasApi.list(true); // enabled only
+        setCameras(response.data);
+        // Set first camera as default if none selected
+        if (!selectedCameraId && response.data.length > 0) {
+          setSelectedCameraId(response.data[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to load cameras:', err);
+      }
+    };
+    loadCameras();
+  }, []);
 
   useEffect(() => {
     if (autoStart) {
@@ -75,25 +102,52 @@ export function LiveStream({ autoStart = true }: LiveStreamProps) {
   };
 
   const refreshStream = () => {
-    if (imgRef.current) {
-      imgRef.current.src = `${streamApi.getMjpegUrl()}?t=${Date.now()}`;
+    if (imgRef.current && selectedCameraId) {
+      imgRef.current.src = `${streamApi.getCameraMjpegUrl(selectedCameraId)}?t=${Date.now()}`;
     }
   };
 
-  // Camera optical zoom controls (hold to zoom)
+  // Get stream URL for current camera (with cache busting for camera switches)
+  const getStreamUrl = () => {
+    if (selectedCameraId) {
+      return `${streamApi.getCameraMjpegUrl(selectedCameraId)}?cam=${selectedCameraId}`;
+    }
+    return streamApi.getMjpegUrl(); // Fallback to full view
+  };
+
+  // Navigate to next/previous camera
+  const selectNextCamera = () => {
+    if (cameras.length === 0) return;
+    const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
+    const nextIndex = (currentIndex + 1) % cameras.length;
+    setSelectedCameraId(cameras[nextIndex].id);
+  };
+
+  const selectPrevCamera = () => {
+    if (cameras.length === 0) return;
+    const currentIndex = cameras.findIndex(c => c.id === selectedCameraId);
+    const prevIndex = (currentIndex - 1 + cameras.length) % cameras.length;
+    setSelectedCameraId(cameras[prevIndex].id);
+  };
+
+  const currentCamera = cameras.find(c => c.id === selectedCameraId);
+
+  // Camera optical zoom controls (hold to zoom) - uses selected camera
   const startZoomIn = async () => {
+    if (!selectedCameraId) return;
     setIsZooming(true);
     try {
-      await systemApi.zoomIn(50);
+      await systemApi.zoomIn(50, selectedCameraId);
     } catch (err) {
       console.error('Zoom in failed:', err);
     }
   };
 
   const startZoomOut = async () => {
+    if (!selectedCameraId) return;
     setIsZooming(true);
     try {
-      await systemApi.zoomOut(50);
+      await systemApi.zoomOut(50, selectedCameraId);
     } catch (err) {
       console.error('Zoom out failed:', err);
     }
@@ -102,9 +156,9 @@ export function LiveStream({ autoStart = true }: LiveStreamProps) {
   const stopZoom = async () => {
     setIsZooming(false);
     try {
-      await systemApi.zoomStop();
+      await systemApi.zoomStop(selectedCameraId || undefined);
       // Update zoom level display
-      const status = await systemApi.ptzStatus();
+      const status = await systemApi.ptzStatus(selectedCameraId || undefined);
       setCameraZoom(status.data.zoom || 0);
     } catch (err) {
       console.error('Zoom stop failed:', err);
@@ -112,8 +166,9 @@ export function LiveStream({ autoStart = true }: LiveStreamProps) {
   };
 
   const resetZoom = async () => {
+    if (!selectedCameraId) return;
     try {
-      await systemApi.zoomSet(0);
+      await systemApi.zoomSet(0, selectedCameraId);
       setCameraZoom(0);
     } catch (err) {
       console.error('Reset zoom failed:', err);
@@ -133,7 +188,19 @@ export function LiveStream({ autoStart = true }: LiveStreamProps) {
   return (
     <div className={`stream-container ${isFullscreen ? 'fullscreen' : ''}`} ref={containerRef}>
       <div className="stream-header">
-        <h3>Live Stream</h3>
+        <h3>
+          {cameras.length > 1 && (
+            <button onClick={selectPrevCamera} className="camera-nav-btn" title="Previous Camera">
+              <ChevronLeft size={18} />
+            </button>
+          )}
+          <span className="camera-name">{currentCamera?.name || 'Live Stream'}</span>
+          {cameras.length > 1 && (
+            <button onClick={selectNextCamera} className="camera-nav-btn" title="Next Camera">
+              <ChevronRight size={18} />
+            </button>
+          )}
+        </h3>
         <div className="stream-controls">
           <span className="fps-display">FPS: {fps.toFixed(1)}</span>
           <span className="zoom-display" title="Camera optical zoom">{cameraZoom}%</span>
@@ -179,9 +246,10 @@ export function LiveStream({ autoStart = true }: LiveStreamProps) {
           <div className="stream-error">{error}</div>
         ) : (
           <img
+            key={`stream-${selectedCameraId || 'all'}`}
             ref={imgRef}
-            src={isPlaying ? streamApi.getMjpegUrl() : ''}
-            alt="Live Stream"
+            src={isPlaying ? getStreamUrl() : ''}
+            alt={currentCamera?.name || 'Live Stream'}
             className="stream-image"
           />
         )}

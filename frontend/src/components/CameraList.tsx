@@ -15,7 +15,6 @@ import {
   Play,
   Eye,
   EyeOff,
-  Settings,
   Image
 } from 'lucide-react';
 

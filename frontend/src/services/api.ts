@@ -18,11 +18,16 @@ export const streamApi = {
   // Full tiled view (all cameras combined)
   getMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg`,
   getWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws`,
-  // Single camera stream (cropped from tiled view)
+  // Single camera stream (cropped from tiled view, WITH overlays)
   getCameraMjpegUrl: (cameraId: number) => `${API_BASE_URL}/stream/mjpeg/camera/${cameraId}`,
   // Raw stream (no overlays/bounding boxes) for enrollment
   getRawMjpegUrl: () => `${API_BASE_URL}/stream/mjpeg/raw`,
   getRawWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/stream/ws/raw`,
+  // Single camera RAW stream (no overlays) - for enrollment preview
+  getCameraRawMjpegUrl: (cameraId: number) => `${API_BASE_URL}/stream/mjpeg/camera/${cameraId}/raw`,
+  // Snapshot endpoints
+  getSnapshotUrl: () => `${API_BASE_URL}/stream/snapshot`,
+  getCameraSnapshotUrl: (cameraId: number) => `${API_BASE_URL}/stream/snapshot/camera/${cameraId}`,
   // Camera switching
   getCurrentCamera: () => api.get('/stream/camera'),
   switchCamera: (cameraId: number) => api.post(`/stream/camera/${cameraId}`),

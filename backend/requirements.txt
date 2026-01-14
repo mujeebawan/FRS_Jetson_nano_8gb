@@ -14,7 +14,9 @@ insightface>=0.7.3
 onnxruntime-gpu>=1.16.0  # Use Jetson-specific wheel
 
 # Similarity Search
-faiss-cpu>=1.7.4  # Start with CPU, upgrade to GPU if needed
+# For Jetson: pip3 install faiss-gpu from NVIDIA's wheel or build from source
+# For x86: pip install faiss-gpu
+faiss-cpu>=1.7.4  # Fallback, prefer faiss-gpu when available
 
 # Database
 sqlalchemy>=2.0.0

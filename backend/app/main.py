@@ -153,14 +153,62 @@ async def lifespan(app: FastAPI):
                         similarity = result.similarity
                         logger.info(f"Face recognized: {result.person_name} (sim={result.similarity:.2f})")
 
+                # Extract single camera frame and adjust bbox coordinates
+                camera_frame = None
+                adjusted_bbox = detection.bbox if detection else None
+                camera_id = getattr(detection, 'camera_id', 0)
+                camera_name = None
+
+                if frame_data and frame_data.frame is not None and hasattr(app.state.stream, '_cameras'):
+                    stream = app.state.stream
+                    num_cameras = len(stream._cameras)
+
+                    if num_cameras > 0:
+                        # Get camera info
+                        camera_index = camera_id  # camera_id in detection is actually the index
+                        if camera_index < len(stream._cameras):
+                            cam = stream._cameras[camera_index]
+                            camera_id = cam.id
+                            camera_name = cam.name
+
+                        # Extract single camera frame from tiled view
+                        tiler_cols = min(num_cameras, 2)
+                        tile_width = 960
+                        tile_height = 540
+
+                        col = camera_index % tiler_cols
+                        row = camera_index // tiler_cols
+
+                        x1 = col * tile_width
+                        y1 = row * tile_height
+                        x2 = x1 + tile_width
+                        y2 = y1 + tile_height
+
+                        full_frame = frame_data.frame
+                        if y2 <= full_frame.shape[0] and x2 <= full_frame.shape[1]:
+                            camera_frame = full_frame[y1:y2, x1:x2].copy()
+
+                            # Adjust bbox coordinates relative to single camera frame
+                            if detection and detection.bbox:
+                                bx, by, bw, bh = detection.bbox
+                                adjusted_bbox = (bx - x1, by - y1, bw, bh)
+                        else:
+                            camera_frame = full_frame  # Fallback to full frame
+                    else:
+                        camera_frame = frame_data.frame
+                else:
+                    camera_frame = frame_data.frame if frame_data else None
+
                 alert = app.state.alert_manager.create_alert(
                     db=db,
                     event_type="face_detected",
                     person=person,
                     confidence=detection.confidence,
                     similarity_score=similarity,
-                    frame=frame_data.frame if frame_data else None,
-                    bbox=detection.bbox if detection else None
+                    frame=camera_frame,
+                    bbox=adjusted_bbox,
+                    camera_id=camera_id,
+                    camera_name=camera_name
                 )
 
                 if alert:

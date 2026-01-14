@@ -26,13 +26,17 @@ if curl -s "http://localhost:$BACKEND_PORT/health" > /dev/null 2>&1; then
     BACKEND_PID=$(lsof -t -i :$BACKEND_PORT 2>/dev/null | head -1)
     echo -e "  Status: ${GREEN}Running${NC} (PID: $BACKEND_PID)"
 
-    # Get system status
-    STATUS=$(curl -s "http://localhost:$BACKEND_PORT/api/system/status" 2>/dev/null)
-    if [ -n "$STATUS" ]; then
-        FPS=$(echo "$STATUS" | grep -o '"fps":[0-9.]*' | cut -d: -f2)
-        RUNNING=$(echo "$STATUS" | grep -o '"running":true' | wc -l)
+    # Get stream status (includes pipeline info)
+    STREAM_STATUS=$(curl -s "http://localhost:$BACKEND_PORT/api/stream/status" 2>/dev/null)
+    if [ -n "$STREAM_STATUS" ]; then
+        FPS=$(echo "$STREAM_STATUS" | grep -o '"fps":[0-9.]*' | cut -d: -f2)
+        NUM_CAMS=$(echo "$STREAM_STATUS" | grep -o '"num_cameras":[0-9]*' | cut -d: -f2)
+        PIPELINE=$(echo "$STREAM_STATUS" | grep -o '"pipeline":"[^"]*"' | cut -d'"' -f4)
+        RUNNING=$(echo "$STREAM_STATUS" | grep -o '"running":true' | wc -l)
         if [ "$RUNNING" -gt 0 ]; then
             echo -e "  Stream: ${GREEN}Active${NC} at ${FPS} FPS"
+            echo -e "  Cameras: ${NUM_CAMS}"
+            echo -e "  Pipeline: ${PIPELINE}"
         else
             echo -e "  Stream: ${YELLOW}Stopped${NC}"
         fi
@@ -51,14 +55,22 @@ else
     echo -e "  Status: ${RED}Stopped${NC}"
 fi
 
-# Check Camera
+# Check Cameras (from API)
 echo ""
-echo -e "${YELLOW}Camera (192.168.1.64):${NC}"
-if ping -c 1 -W 1 192.168.1.64 > /dev/null 2>&1; then
-    echo -e "  Status: ${GREEN}Reachable${NC}"
+echo -e "${YELLOW}Cameras:${NC}"
+CAMERAS=$(curl -s "http://localhost:$BACKEND_PORT/api/cameras/" 2>/dev/null)
+if [ -n "$CAMERAS" ] && [ "$CAMERAS" != "[]" ]; then
+    # Check each camera's connectivity
+    for ip in $(echo "$CAMERAS" | python3 -c "import sys,json; print(' '.join([c['ip_address'] for c in json.load(sys.stdin)]))" 2>/dev/null); do
+        CAM_NAME=$(echo "$CAMERAS" | python3 -c "import sys,json; cams=json.load(sys.stdin); print(next((c['name'] for c in cams if c['ip_address']=='$ip'),'Camera'))" 2>/dev/null)
+        if ping -c 1 -W 1 $ip > /dev/null 2>&1; then
+            echo -e "  ${CAM_NAME} (${ip}): ${GREEN}Reachable${NC}"
+        else
+            echo -e "  ${CAM_NAME} (${ip}): ${RED}Not reachable${NC}"
+        fi
+    done
 else
-    echo -e "  Status: ${RED}Not reachable${NC}"
-    echo -e "  ${YELLOW}Tip: Run 'sudo ip addr add 192.168.1.100/24 dev enP8p1s0'${NC}"
+    echo -e "  ${YELLOW}No cameras configured${NC}"
 fi
 
 # System Resources

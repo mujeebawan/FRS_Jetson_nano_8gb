@@ -1,5 +1,5 @@
 {
-  "detection_confidence": 0.5,
+  "detection_confidence": 0.75,
   "recognition_threshold": 0.4,
   "frame_skip": 3,
   "enable_motion_trigger": false,

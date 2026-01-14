@@ -37,6 +37,9 @@ class AlertResponse(BaseModel):
     confidence: float
     acknowledged: bool = False
     snapshot_path: Optional[str] = None
+    # Camera info
+    camera_id: Optional[int] = None
+    camera_name: Optional[str] = None
     # Extended fields
     similarity_score: Optional[float] = None
     threat_level: Optional[str] = None
@@ -66,6 +69,8 @@ def db_alert_to_response(alert: AlertModel) -> AlertResponse:
         confidence=alert.confidence or 0.0,
         acknowledged=alert.acknowledged,
         snapshot_path=alert.snapshot_path,
+        camera_id=alert.camera_id,
+        camera_name=alert.camera_name,
         similarity_score=alert.similarity_score,
         threat_level=alert.threat_level,
         watchlist_status=alert.watchlist_status,

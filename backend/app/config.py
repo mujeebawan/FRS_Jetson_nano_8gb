@@ -36,10 +36,10 @@ _persisted = _load_persisted_settings()
 class Settings(BaseSettings):
     """Application settings loaded from .env file and persistent storage"""
 
-    # Camera Configuration
-    camera_ip: str = "192.168.1.64"
+    # Camera Configuration (default - actual cameras use database)
+    camera_ip: str = "192.168.1.70"
     camera_username: str = "admin"
-    camera_password: str = "Mujeeb@321"
+    camera_password: str = "Admin@123"
     camera_rtsp_port: int = 554
 
     # Stream URLs (constructed from camera settings)

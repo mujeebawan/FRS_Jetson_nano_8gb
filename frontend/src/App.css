@@ -1746,22 +1746,55 @@ body {
   color: #f87171;
 }
 
+/* Camera Info in Modal */
+.modal-camera-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: rgba(59, 130, 246, 0.15);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.3);
+  font-size: 0.9rem;
+  color: #93c5fd;
+}
+
+.modal-camera-info svg {
+  flex-shrink: 0;
+  color: #60a5fa;
+}
+
+.modal-camera-info strong {
+  color: #fff;
+  font-weight: 600;
+}
+
 /* Image Comparison in Modal */
 .modal-image-comparison {
   display: flex;
-  align-items: stretch;
+  align-items: flex-start;
   justify-content: center;
-  gap: 0;
+  gap: 1rem;
   padding: 1.5rem;
   background: rgba(0, 0, 0, 0.2);
+  flex-wrap: wrap;
 }
 
 .modal-image-panel {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  max-width: 350px;
+}
+
+/* Enrolled (reference) image - smaller, square */
+.modal-image-panel.enrolled {
+  flex: 0 0 180px;
+}
+
+/* Captured image - larger, takes more space */
+.modal-image-panel.captured {
+  flex: 1;
+  min-width: 400px;
+  max-width: 600px;
 }
 
 .modal-image-label {
@@ -1783,8 +1816,6 @@ body {
 
 .modal-image-container {
   width: 100%;
-  aspect-ratio: 1;
-  max-width: 280px;
   border-radius: 0.75rem;
   overflow: hidden;
   border: 3px solid var(--border);
@@ -1794,18 +1825,24 @@ body {
   justify-content: center;
 }
 
+/* Enrolled image container - square, smaller */
 .modal-image-panel.enrolled .modal-image-container {
   border-color: rgba(134, 239, 172, 0.5);
+  aspect-ratio: 1;
+  max-width: 180px;
 }
 
+/* Captured image container - 16:9, larger */
 .modal-image-panel.captured .modal-image-container {
   border-color: rgba(252, 211, 77, 0.5);
+  aspect-ratio: 16/9;
+  max-width: 100%;
 }
 
 .modal-image-container img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .modal-image-container .no-image {

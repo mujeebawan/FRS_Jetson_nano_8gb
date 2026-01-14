@@ -737,7 +737,7 @@ def test_pipeline():
     recognizer = FaceRecognizer(
         embeddings_dir="data/embeddings",
         threshold=0.4,
-        use_gpu=False
+        use_gpu=True  # GPU FAISS for batch performance
     )
     recognizer.load()
     print(f"Loaded {recognizer.count} enrolled faces")

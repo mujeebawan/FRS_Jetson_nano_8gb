@@ -162,6 +162,11 @@ class DeepStreamManager:
         # Timing stats
         self._last_timing = {'detection': 0, 'recognition': 0, 'faiss': 0, 'total': 0, 'faces': 0}
 
+        # Video recorder for alert clips
+        self._video_recorder = None
+        self._video_frame_counter = 0
+        self._video_frame_interval = 2  # Feed every Nth frame to save CPU (15fps target from 25fps)
+
         # Tiler configuration for per-camera frame extraction
         self._tiler_cols = min(self._num_cameras, 2) if self._num_cameras > 0 else 1
         self._tiler_rows = (self._num_cameras + self._tiler_cols - 1) // self._tiler_cols if self._num_cameras > 0 else 1
@@ -192,10 +197,46 @@ class DeepStreamManager:
             raise RuntimeError(f"Failed to create element: {factory}")
         return elem
 
+    def _check_camera_connectivity(self, ip_address: str, timeout: float = 1.0) -> bool:
+        """Check if camera IP is reachable via ping."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", str(int(timeout)), ip_address],
+                capture_output=True,
+                timeout=timeout + 1
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
     def _create_pipeline(self) -> bool:
         """Create DeepStream pipeline with multi-camera support."""
         try:
             self.pipeline = Gst.Pipeline.new("deepstream-face-pipeline")
+
+            # Filter out offline cameras before creating pipeline
+            online_cameras = []
+            for cam in self._cameras:
+                if self._check_camera_connectivity(cam.ip_address):
+                    online_cameras.append(cam)
+                    logger.info(f"Camera '{cam.name}' ({cam.ip_address}): Online")
+                else:
+                    logger.warning(f"Camera '{cam.name}' ({cam.ip_address}): Offline - skipping")
+
+            if not online_cameras:
+                logger.error("No cameras are reachable. Cannot start pipeline.")
+                return False
+
+            # Update camera list to only include online cameras
+            self._cameras = online_cameras
+            self._num_cameras = len(online_cameras)
+            self._camera = online_cameras[0]
+            self._camera_id = self._camera.id
+
+            # Update tiler configuration for available cameras
+            self._tiler_cols = min(self._num_cameras, 2) if self._num_cameras > 0 else 1
+            self._tiler_rows = (self._num_cameras + self._tiler_cols - 1) // self._tiler_cols if self._num_cameras > 0 else 1
 
             # Stream muxer for batching multiple cameras
             streammux = self._create_element("nvstreammux", "muxer")
@@ -206,9 +247,9 @@ class DeepStreamManager:
             streammux.set_property("live-source", True)
             self.pipeline.add(streammux)
 
-            # Create source chain for each camera
+            # Create source chain for each online camera
             self._sources = {}
-            for i, cam in enumerate(self._cameras):
+            for i, cam in enumerate(online_cameras):
                 # Source: RTSP stream
                 source = self._create_element("rtspsrc", f"source_{i}")
                 source.set_property("location", cam.rtsp_url)
@@ -335,12 +376,19 @@ class DeepStreamManager:
 
             embedding = result.embeddings[i] if i < len(result.embeddings) else None
 
+            # Calculate camera_id from bbox position in tiled frame
+            # Each tile is 960x540, cameras arranged in columns (max 2 per row)
+            camera_index = x1 // self._tile_width if self._tile_width > 0 else 0
+            # Clamp to valid camera range
+            camera_index = min(camera_index, self._num_cameras - 1) if self._num_cameras > 0 else 0
+
             face_result = FaceResult(
                 bbox=(x1, y1, x2 - x1, y2 - y1),
                 confidence=float(score),
                 embedding=embedding,
                 person_name=None,
-                similarity=0.0
+                similarity=0.0,
+                camera_id=camera_index
             )
             new_faces.append(face_result)
             if embedding is not None:
@@ -410,6 +458,67 @@ class DeepStreamManager:
             if not sink_pad.is_linked():
                 pad.link(sink_pad)
 
+    def capture_camera_frame_direct(self, camera_index: int, timeout: float = 5.0) -> Optional[FrameData]:
+        """
+        Capture a single frame directly from camera RTSP stream using OpenCV.
+
+        This bypasses the DeepStream pipeline entirely for clean individual camera
+        capture - used for enrollment where we don't need the tiled detection pipeline.
+
+        Args:
+            camera_index: Index of camera to capture from
+            timeout: Maximum time to wait for frame capture
+
+        Returns:
+            FrameData with captured frame, or None if capture failed
+        """
+        import cv2
+
+        if camera_index < 0 or camera_index >= len(self._cameras):
+            logger.warning(f"Invalid camera index {camera_index}")
+            return None
+
+        camera = self._cameras[camera_index]
+        rtsp_url = camera.rtsp_url
+
+        logger.info(f"[DIRECT CAPTURE] Camera {camera_index} ({camera.name}): {camera.ip_address}")
+
+        try:
+            # Open RTSP stream with OpenCV
+            cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+            if not cap.isOpened():
+                logger.error(f"[DIRECT CAPTURE] Failed to open RTSP stream: {rtsp_url}")
+                return None
+
+            # Read frame (skip first few frames for stable capture)
+            frame = None
+            for _ in range(3):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+            cap.release()
+
+            if frame is None:
+                logger.error(f"[DIRECT CAPTURE] Failed to read frame from camera {camera_index}")
+                return None
+
+            logger.info(f"[DIRECT CAPTURE] Success: {frame.shape}")
+
+            return FrameData(
+                frame=frame,
+                timestamp=time.time(),
+                frame_number=0,
+                camera_id=camera.id,
+                has_faces=False
+            )
+
+        except Exception as e:
+            logger.error(f"[DIRECT CAPTURE] Error: {e}")
+            return None
+
     def _on_new_sample(self, appsink):
         """Handle new frame from appsink."""
         # Debug: print sample count periodically
@@ -475,6 +584,16 @@ class DeepStreamManager:
             # Broadcast to subscribers
             self._broadcast(frame_data)
             self._update_fps()
+
+            # Feed frames to video recorder (for pre-alert buffer)
+            if self._video_recorder is not None:
+                self._video_frame_counter += 1
+                # Feed every Nth frame to achieve ~15fps from 25fps stream
+                if self._video_frame_counter % self._video_frame_interval == 0:
+                    try:
+                        self._video_recorder.add_frame(raw_frame)
+                    except Exception as e:
+                        pass  # Don't crash stream on video recorder errors
 
         return Gst.FlowReturn.OK
 
@@ -917,6 +1036,14 @@ class DeepStreamManager:
         """Remove subscriber."""
         self._subscribers.discard(queue)
 
+    def set_video_recorder(self, recorder):
+        """
+        Set video recorder for alert clips.
+        The recorder receives frames continuously to maintain a rolling buffer.
+        """
+        self._video_recorder = recorder
+        logger.info("Video recorder connected to DeepStream pipeline")
+
     def get_latest_frame(self) -> Optional[FrameData]:
         """Get the most recent frame with overlays (full tiled view)."""
         with self._lock:
@@ -969,17 +1096,23 @@ class DeepStreamManager:
                 has_faces=self._latest_frame.has_faces
             )
 
-    def get_camera_raw_frame(self, camera_index: int) -> Optional[FrameData]:
+    def get_camera_raw_frame(self, camera_index: int, use_direct_capture: bool = False) -> Optional[FrameData]:
         """
         Get RAW frame (without overlays) for a specific camera.
-        Used for enrollment to capture clean face images.
 
         Args:
             camera_index: Index of camera in the tiled grid (0-based)
+            use_direct_capture: If True, capture directly from RTSP (slower but cleaner).
+                               If False, crop from tiled view (faster, for preview).
 
         Returns:
-            FrameData with cropped raw frame (no bounding boxes), or None if unavailable
+            FrameData with raw frame (no bounding boxes), or None if unavailable
         """
+        # For enrollment, use direct capture from RTSP stream (cleaner, full resolution)
+        if use_direct_capture:
+            return self.capture_camera_frame_direct(camera_index)
+
+        # For preview/display, crop from tiled view (faster, real-time)
         with self._lock:
             if self._latest_raw_frame is None or self._latest_raw_frame.frame is None:
                 return None

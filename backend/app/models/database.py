@@ -155,6 +155,10 @@ class Alert(Base):
     # Snapshot path (date-wise folder)
     snapshot_path = Column(String(500), nullable=True)
 
+    # Camera info (which camera detected the face)
+    camera_id = Column(Integer, ForeignKey("cameras.id"), nullable=True)
+    camera_name = Column(String(255), nullable=True)  # Cached for quick display
+
     # Cached threat info (denormalized from Person for fast queries)
     threat_level = Column(String(20), nullable=True, index=True)
     watchlist_status = Column(String(50), nullable=True, index=True)

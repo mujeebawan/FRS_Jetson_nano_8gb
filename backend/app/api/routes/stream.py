@@ -120,7 +120,7 @@ async def get_current_camera(request: Request):
 
 @router.get("/snapshot")
 async def get_snapshot(request: Request):
-    """Get a single JPEG snapshot from the current stream (raw, without overlays)."""
+    """Get a single JPEG snapshot from the current stream (raw tiled view, without overlays)."""
     stream = request.app.state.stream
 
     if not stream.is_running:
@@ -130,6 +130,30 @@ async def get_snapshot(request: Request):
     frame_data = stream.get_latest_raw_frame()
     if frame_data is None or frame_data.frame is None:
         raise HTTPException(status_code=404, detail="No frame available")
+
+    # Encode as JPEG
+    jpeg = stream.encode_jpeg(frame_data.frame, quality=90)
+
+    return Response(content=jpeg, media_type="image/jpeg")
+
+
+@router.get("/snapshot/camera/{camera_id}")
+async def get_camera_snapshot(camera_id: int, request: Request):
+    """Get a single JPEG snapshot from a specific camera (raw, without overlays)."""
+    stream = request.app.state.stream
+
+    if not stream.is_running:
+        raise HTTPException(status_code=400, detail="Stream not running")
+
+    # Get camera index from database ID
+    camera_index = stream.get_camera_index_by_id(camera_id)
+    if camera_index is None:
+        raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+
+    # Get raw frame for this specific camera (no overlays)
+    frame_data = stream.get_camera_raw_frame(camera_index)
+    if frame_data is None or frame_data.frame is None:
+        raise HTTPException(status_code=404, detail="No frame available from camera")
 
     # Encode as JPEG
     jpeg = stream.encode_jpeg(frame_data.frame, quality=90)
@@ -286,6 +310,43 @@ async def mjpeg_raw_stream(request: Request):
                 frame_data = stream.get_latest_raw_frame()
                 if frame_data and frame_data.frame is not None:
                     jpeg = stream.encode_jpeg(frame_data.frame, quality=70)
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                    )
+            except Exception:
+                break
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@router.get("/mjpeg/camera/{camera_id}/raw")
+async def mjpeg_camera_raw_stream(camera_id: int, request: Request):
+    """
+    Raw MJPEG stream for a SINGLE camera WITHOUT overlays/bounding boxes.
+    Used for enrollment preview - shows clean camera feed for face capture.
+    """
+    stream = request.app.state.stream
+
+    if not stream.is_running:
+        stream.start()
+
+    # Get camera index from database ID
+    camera_index = stream.get_camera_index_by_id(camera_id)
+    if camera_index is None:
+        raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+
+    async def generate():
+        while True:
+            try:
+                await asyncio.sleep(0.033)  # ~30 FPS
+                # Get raw frame (no overlays) for this specific camera
+                camera_frame = stream.get_camera_raw_frame(camera_index)
+                if camera_frame and camera_frame.frame is not None:
+                    jpeg = stream.encode_jpeg(camera_frame.frame, quality=70)
                     yield (
                         b"--frame\r\n"
                         b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"

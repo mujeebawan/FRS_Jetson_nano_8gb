@@ -258,14 +258,19 @@ class SCRFDParser:
         Decode SCRFD box format to x1,y1,x2,y2.
 
         SCRFD uses distance from anchor center: (left, top, right, bottom)
+        Box values are in log-space and need exp() transformation.
         """
-        # boxes: [N, 4] as (left, top, right, bottom) distances
+        # boxes: [N, 4] as (left, top, right, bottom) distances in log-space
         # anchor_centers: [N, 2] as (cx, cy)
 
-        x1 = anchor_centers[:, 0] - boxes[:, 0] * stride
-        y1 = anchor_centers[:, 1] - boxes[:, 1] * stride
-        x2 = anchor_centers[:, 0] + boxes[:, 2] * stride
-        y2 = anchor_centers[:, 1] + boxes[:, 3] * stride
+        # Apply exp() to convert from log-space to actual distances
+        # Clip to prevent overflow
+        boxes_exp = np.exp(np.clip(boxes, -10, 10))
+
+        x1 = anchor_centers[:, 0] - boxes_exp[:, 0] * stride
+        y1 = anchor_centers[:, 1] - boxes_exp[:, 1] * stride
+        x2 = anchor_centers[:, 0] + boxes_exp[:, 2] * stride
+        y2 = anchor_centers[:, 1] + boxes_exp[:, 3] * stride
 
         # Clip to input size
         x1 = np.clip(x1, 0, self.input_size[0])
@@ -285,8 +290,9 @@ class SCRFDParser:
         Decode SCRFD keypoint format.
 
         Keypoints are offsets from anchor center, scaled by stride.
+        Unlike boxes, keypoints are direct offsets (not log-space).
         """
-        # kps: [N, 10] as 5 pairs of (dx, dy)
+        # kps: [N, 10] as 5 pairs of (dx, dy) - direct offsets
         decoded = np.zeros_like(kps)
 
         for i in range(5):

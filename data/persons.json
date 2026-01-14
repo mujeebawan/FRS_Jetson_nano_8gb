@@ -1,22 +1,12 @@
 {
-  "1": {
-    "name": "Mujeeb",
-    "id_card": "12112-1212113-1",
-    "case": "Admin"
-  },
-  "2": {
-    "name": "Mubashir",
-    "id_card": "123121-12313412-2",
-    "case": "Testing"
-  },
-  "3": {
-    "name": "Zohaib",
-    "id_card": "123123-12312431-1",
-    "case": "Testing"
-  },
   "4": {
     "name": "zubair",
     "id_card": null,
     "case": null
+  },
+  "1": {
+    "name": "Mujeeb",
+    "id_card": "12324124214",
+    "case": "Admin"
   }
 }

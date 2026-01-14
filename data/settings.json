@@ -1,6 +1,6 @@
 {
   "detection_confidence": 0.5,
-  "recognition_threshold": 0.45,
+  "recognition_threshold": 0.38,
   "frame_skip": 2,
   "enable_motion_trigger": true,
   "alert_cooldown_seconds": 60,

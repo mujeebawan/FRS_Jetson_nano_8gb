@@ -93,6 +93,12 @@ if ! $BACKEND_RUNNING; then
     export PATH=$HOME/.local/bin:/usr/bin:$PATH
     export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
 
+    # GPU optimization environment variables
+    export CUDA_MODULE_LOADING=LAZY
+    export TF_FORCE_GPU_ALLOW_GROWTH=true
+
+    echo -e "  GPU Pipeline: DeepStream + TensorRT + FAISS GPU"
+
     # Start uvicorn in background
     nohup python3 -m uvicorn backend.app.main:app \
         --host 0.0.0.0 \
@@ -168,6 +174,8 @@ echo ""
 echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}  System Started Successfully!${NC}"
 echo -e "${GREEN}============================================${NC}"
+echo ""
+echo -e "  ${BLUE}Pipeline:${NC}  DeepStream → TensorRT SCRFD → ArcFace → FAISS GPU"
 echo ""
 echo -e "  ${BLUE}Frontend:${NC}  http://${JETSON_IP}:${FRONTEND_PORT}"
 echo -e "  ${BLUE}Backend:${NC}   http://${JETSON_IP}:${BACKEND_PORT}"

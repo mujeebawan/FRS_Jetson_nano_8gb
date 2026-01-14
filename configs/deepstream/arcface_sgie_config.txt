@@ -21,11 +21,14 @@ model-color-format=0
 # Input dimensions (112x112 aligned face)
 infer-dims=3;112;112
 
-# Batch size for SGIE (processes all detected faces in batch)
-batch-size=32
+# Batch size for SGIE (reduced from 32 to 4 to save GPU memory on Jetson)
+batch-size=4
 
 # FP16 inference
 network-mode=2
+
+# No interval needed - SGIE with tracker automatically caches embeddings
+# Only re-infers when object is new or bounding box grows 20%+
 
 # Custom network (embedding output, not classifier)
 network-type=100

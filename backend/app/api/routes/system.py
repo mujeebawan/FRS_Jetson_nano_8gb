@@ -476,7 +476,8 @@ async def get_current_settings(request: Request):
 async def camera_zoom(
     request: Request,
     action: str = "stop",
-    speed: int = 50
+    speed: int = 50,
+    camera_id: int = None
 ):
     """
     Control camera optical zoom.
@@ -484,29 +485,41 @@ async def camera_zoom(
     Args:
         action: "in" (zoom in), "out" (zoom out), "stop" (stop zooming)
         speed: Zoom speed 1-100 (default 50)
+        camera_id: Optional camera ID (uses primary if not specified)
     """
-    camera = request.app.state.camera
+    # Get the correct camera service
+    if camera_id and camera_id in request.app.state.cameras:
+        camera = request.app.state.cameras[camera_id]
+    else:
+        camera = request.app.state.camera
     success = await camera.ptz_zoom(action=action, speed=speed)
-    return {"success": success, "action": action}
+    return {"success": success, "action": action, "camera_id": camera_id}
 
 
 @router.post("/camera/zoom/set")
-async def camera_zoom_set(request: Request, level: int = 0):
+async def camera_zoom_set(request: Request, level: int = 0, camera_id: int = None):
     """
     Set absolute zoom level.
 
     Args:
         level: Zoom level 0-100 (0=wide, 100=max tele)
+        camera_id: Optional camera ID (uses primary if not specified)
     """
-    camera = request.app.state.camera
+    if camera_id and camera_id in request.app.state.cameras:
+        camera = request.app.state.cameras[camera_id]
+    else:
+        camera = request.app.state.camera
     success = await camera.ptz_zoom_absolute(zoom_level=level)
-    return {"success": success, "level": level}
+    return {"success": success, "level": level, "camera_id": camera_id}
 
 
 @router.get("/camera/ptz/status")
-async def camera_ptz_status(request: Request):
+async def camera_ptz_status(request: Request, camera_id: int = None):
     """Get current PTZ status including zoom level."""
-    camera = request.app.state.camera
+    if camera_id and camera_id in request.app.state.cameras:
+        camera = request.app.state.cameras[camera_id]
+    else:
+        camera = request.app.state.camera
     status = await camera.get_ptz_status()
     return status
 

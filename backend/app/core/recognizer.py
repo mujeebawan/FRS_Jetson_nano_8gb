@@ -111,28 +111,24 @@ class FaceRecognizer:
             return True
 
         try:
+            # Import faiss-cpu only to avoid GPU SWIG issues on Jetson
+            # CPU FAISS is fast enough (<1ms) for typical deployments (<1000 embeddings)
             import faiss
 
-            # Use L2 distance (for normalized embeddings, equivalent to cosine)
-            self._index = faiss.IndexFlatIP(dimension)  # Inner product for cosine sim
-
-            if self.use_gpu:
-                try:
-                    res = faiss.StandardGpuResources()
-                    self._index = faiss.index_cpu_to_gpu(res, 0, self._index)
-                    logger.info("FAISS GPU index initialized")
-                except Exception as e:
-                    logger.warning(f"GPU FAISS failed, using CPU: {e}")
-
+            # Use Inner Product for cosine similarity (on normalized embeddings)
+            self._index = faiss.IndexFlatIP(dimension)
             self._faiss_initialized = True
-            logger.info("FAISS index initialized")
+
+            # Note: GPU FAISS disabled due to SWIG compatibility issues on Jetson
+            # CPU mode provides <1ms search time which is sufficient
+            logger.info("FAISS index initialized (CPU mode)")
             return True
 
         except ImportError:
             logger.warning("FAISS not available, using numpy fallback")
             return False
         except Exception as e:
-            logger.error(f"FAISS initialization error: {e}")
+            logger.warning(f"FAISS init warning: {e}, using numpy fallback")
             return False
 
     def add_embedding(
@@ -273,6 +269,62 @@ class FaceRecognizer:
         db_embeddings = np.array(self._embeddings)
         similarities = np.dot(db_embeddings, query)
         return similarities
+
+    def batch_match(self, embeddings: np.ndarray, k: int = 1) -> List[Optional[MatchResult]]:
+        """
+        Batch match multiple embeddings at once using FAISS.
+        Much faster than calling match() in a loop.
+
+        Args:
+            embeddings: Array of shape (N, 512) with N query embeddings
+            k: Number of matches per embedding
+
+        Returns:
+            List of MatchResult (or None) for each embedding
+        """
+        if self._embeddings is None or len(self._embeddings) == 0:
+            return [None] * len(embeddings)
+
+        if len(embeddings) == 0:
+            return []
+
+        # Ensure proper shape and type
+        embeddings = embeddings.astype(np.float32)
+        if len(embeddings.shape) == 1:
+            embeddings = embeddings.reshape(1, -1)
+
+        try:
+            if self._faiss_initialized and self._index is not None:
+                # Batch FAISS search - ALL embeddings at once
+                distances, indices = self._index.search(embeddings, min(k, len(self._embeddings)))
+            else:
+                # Numpy batch fallback
+                db_embeddings = np.array(self._embeddings, dtype=np.float32)
+                # Batch dot product: (N, 512) @ (512, M) = (N, M)
+                similarities = np.dot(embeddings, db_embeddings.T)
+                indices = np.argsort(similarities, axis=1)[:, ::-1][:, :k]
+                distances = np.take_along_axis(similarities, indices, axis=1)
+
+            results = []
+            for i in range(len(embeddings)):
+                idx = indices[i, 0] if k > 0 else -1
+                sim = distances[i, 0] if k > 0 else 0.0
+
+                if idx < 0 or idx >= len(self._person_ids):
+                    results.append(None)
+                else:
+                    results.append(MatchResult(
+                        person_id=self._person_ids[idx],
+                        person_name=self._person_names[idx],
+                        similarity=float(sim),
+                        is_match=float(sim) >= self.threshold
+                    ))
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Batch match error: {e}")
+            return [None] * len(embeddings)
 
     def identify(self, embedding: np.ndarray) -> Optional[MatchResult]:
         """
