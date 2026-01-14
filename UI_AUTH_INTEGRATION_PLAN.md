@@ -18,7 +18,7 @@ Integrate the modern shadcn/ui components and JWT authentication system from Mua
 | **Backend Pipeline** | DeepStream + TensorRT + FAISS | Basic GStreamer |
 | **Face Detection** | SCRFD via TensorRT | SCRFD via ONNX |
 | **Multi-Camera** | Yes (2 cameras) | No |
-| **Authentication** | None | JWT + Role-based |
+| **Authentication** | JWT + Role-based (DONE) | JWT + Role-based |
 | **UI Framework** | Basic CSS | shadcn/ui + Tailwind |
 | **Theme** | Light only | Dark/Light toggle |
 | **Routing** | Tab-based | React Router |
@@ -247,16 +247,16 @@ curl -X POST http://localhost:8000/api/users/ \
 
 ## Implementation Order
 
-### Week 1: Backend Auth
+### Week 1: Backend Auth (COMPLETED 2026-01-14)
 1. [x] Analyze Muaz's auth implementation
-2. [ ] Create User model and migration
-3. [ ] Create security.py (JWT, password)
-4. [ ] Create auth routes
-5. [ ] Create user routes
-6. [ ] Create auth dependencies
-7. [ ] Add admin seeding
-8. [ ] Protect existing routes
-9. [ ] Test all endpoints
+2. [x] Create User model and migration
+3. [x] Create security.py (JWT, password)
+4. [x] Create auth routes
+5. [x] Create user routes
+6. [x] Create auth dependencies
+7. [x] Add admin seeding
+8. [ ] Protect existing routes (Next step)
+9. [x] Test all endpoints
 
 ### Week 2: Frontend Setup
 1. [ ] Install shadcn/ui dependencies
