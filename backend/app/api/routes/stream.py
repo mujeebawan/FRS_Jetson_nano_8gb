@@ -5,28 +5,38 @@ from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 import asyncio
 
-from ...models.database import get_db, Camera
+from ...models.database import get_db, Camera, User
+from ..deps import get_current_active_user, require_admin
 
 router = APIRouter()
 
 
 @router.get("/start")
-async def start_stream(request: Request):
-    """Start video stream capture."""
+async def start_stream(
+    request: Request,
+    admin: User = Depends(require_admin)
+):
+    """Start video stream capture (admin only)."""
     stream = request.app.state.stream
     success = stream.start()
     return {"success": success, "message": "Stream started" if success else "Failed to start"}
 
 
 @router.get("/stop")
-async def stop_stream(request: Request):
-    """Stop video stream capture."""
+async def stop_stream(
+    request: Request,
+    admin: User = Depends(require_admin)
+):
+    """Stop video stream capture (admin only)."""
     request.app.state.stream.stop()
     return {"success": True, "message": "Stream stopped"}
 
 
 @router.get("/status")
-async def stream_status(request: Request):
+async def stream_status(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """Get stream status including camera info and motion detection stats."""
     stream = request.app.state.stream
 
@@ -66,9 +76,14 @@ async def stream_status(request: Request):
 
 
 @router.post("/camera/{camera_id}")
-async def switch_camera(camera_id: int, request: Request, db: Session = Depends(get_db)):
+async def switch_camera(
+    camera_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
+):
     """
-    Switch streaming to a different camera.
+    Switch streaming to a different camera (admin only).
 
     Args:
         camera_id: ID of the camera to switch to
@@ -100,7 +115,10 @@ async def switch_camera(camera_id: int, request: Request, db: Session = Depends(
 
 
 @router.get("/camera")
-async def get_current_camera(request: Request):
+async def get_current_camera(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """Get the currently active camera."""
     stream = request.app.state.stream
 
@@ -119,7 +137,10 @@ async def get_current_camera(request: Request):
 
 
 @router.get("/snapshot")
-async def get_snapshot(request: Request):
+async def get_snapshot(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """Get a single JPEG snapshot from the current stream (raw tiled view, without overlays)."""
     stream = request.app.state.stream
 
@@ -138,7 +159,11 @@ async def get_snapshot(request: Request):
 
 
 @router.get("/snapshot/camera/{camera_id}")
-async def get_camera_snapshot(camera_id: int, request: Request):
+async def get_camera_snapshot(
+    camera_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """Get a single JPEG snapshot from a specific camera (raw, without overlays)."""
     stream = request.app.state.stream
 

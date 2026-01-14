@@ -11,7 +11,8 @@ from datetime import datetime
 import cv2
 import logging
 
-from ...models.database import get_db, Camera
+from ...models.database import get_db, Camera, User
+from ..deps import get_current_active_user, require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -120,7 +121,8 @@ def camera_to_response(camera: Camera) -> dict:
 @router.get("/", response_model=List[dict])
 async def list_cameras(
     enabled_only: bool = False,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     List all cameras.
@@ -136,7 +138,9 @@ async def list_cameras(
 
 
 @router.get("/quality-options", response_model=List[StreamQualityOption])
-async def get_stream_quality_options():
+async def get_stream_quality_options(
+    current_user: User = Depends(get_current_active_user)
+):
     """Get available stream quality options for Hikvision cameras."""
     return [
         {
@@ -160,7 +164,8 @@ async def get_stream_quality_options():
 @router.post("/", response_model=dict, status_code=201)
 async def create_camera(
     camera_data: CameraCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """
     Add a new camera.
@@ -212,7 +217,8 @@ async def create_camera(
 @router.get("/{camera_id}", response_model=dict)
 async def get_camera(
     camera_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get a specific camera by ID."""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
@@ -225,7 +231,8 @@ async def get_camera(
 async def update_camera(
     camera_id: int,
     camera_data: CameraUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """
     Update a camera.
@@ -270,7 +277,8 @@ async def update_camera(
 @router.delete("/{camera_id}")
 async def delete_camera(
     camera_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """Delete a camera."""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
@@ -290,7 +298,8 @@ async def delete_camera(
 @router.post("/{camera_id}/test")
 async def test_camera_connection(
     camera_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """
     Test camera connection.
@@ -364,7 +373,8 @@ async def test_camera_connection(
 @router.get("/{camera_id}/snapshot")
 async def get_camera_snapshot(
     camera_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     Get a single snapshot from the camera.
@@ -416,7 +426,8 @@ async def get_camera_snapshot(
 @router.post("/{camera_id}/enable")
 async def enable_camera(
     camera_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """Enable a camera."""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
@@ -431,7 +442,8 @@ async def enable_camera(
 @router.post("/{camera_id}/disable")
 async def disable_camera(
     camera_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """Disable a camera."""
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
@@ -444,7 +456,10 @@ async def disable_camera(
 
 
 @router.get("/stats/summary")
-async def get_cameras_summary(db: Session = Depends(get_db)):
+async def get_cameras_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """Get summary statistics for all cameras."""
     total = db.query(Camera).count()
     enabled = db.query(Camera).filter(Camera.enabled == True).count()

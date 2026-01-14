@@ -12,9 +12,10 @@ import json
 import shutil
 from pathlib import Path
 
-from ...models.database import get_db, Person, FaceEmbedding
+from ...models.database import get_db, Person, FaceEmbedding, User
 from ...config import settings
 from ...core.recognizer import FaceRecognizer
+from ..deps import get_current_active_user, require_admin
 
 router = APIRouter()
 
@@ -161,7 +162,11 @@ class PersonDetailResponse(BaseModel):
 
 
 @router.get("/")
-async def list_persons(request: Request, search: str = None) -> List[PersonResponse]:
+async def list_persons(
+    request: Request,
+    search: str = None,
+    current_user: User = Depends(get_current_active_user)
+) -> List[PersonResponse]:
     """List all enrolled persons from database with optional search."""
     from ...models.database import Alert
     db = next(get_db())
@@ -211,7 +216,8 @@ async def enroll_person(
     watchlist_status: str = Form("normal"),
     threat_level: str = Form("none"),
     guard_prompt: str = Form(None),
-    image: UploadFile = File(...)
+    image: UploadFile = File(...),
+    admin: User = Depends(require_admin)
 ):
     """
     Enroll a new person with face image.
@@ -326,7 +332,8 @@ async def enroll_person(
 async def add_person_image(
     request: Request,
     person_id: int,
-    image: UploadFile = File(...)
+    image: UploadFile = File(...),
+    admin: User = Depends(require_admin)
 ):
     """Add additional face image for existing person."""
     detector = request.app.state.detector
@@ -406,7 +413,11 @@ def remove_person_from_all_models(person_id: int, current_recognizer):
 
 
 @router.delete("/{person_id}")
-async def delete_person(request: Request, person_id: int):
+async def delete_person(
+    request: Request,
+    person_id: int,
+    admin: User = Depends(require_admin)
+):
     """Delete person and all their embeddings from DB and ALL model recognizers."""
     recognizer = request.app.state.recognizer
 
@@ -462,7 +473,8 @@ async def enroll_from_camera(
     watchlist_status: str = "normal",
     threat_level: str = "none",
     guard_prompt: str = None,
-    camera_id: int = None
+    camera_id: int = None,
+    admin: User = Depends(require_admin)
 ):
     """
     Enroll a new person by capturing from live camera stream.
@@ -617,7 +629,10 @@ async def enroll_from_camera(
 
 
 @router.get("/stats")
-async def person_stats(request: Request):
+async def person_stats(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """Get enrollment statistics."""
     recognizer = request.app.state.recognizer
     return {
@@ -627,7 +642,10 @@ async def person_stats(request: Request):
 
 
 @router.get("/{person_id}/image")
-async def get_person_image(person_id: int):
+async def get_person_image(
+    person_id: int,
+    current_user: User = Depends(get_current_active_user)
+):
     """Get the reference image for a person."""
     from fastapi.responses import Response
     db = next(get_db())
@@ -661,7 +679,10 @@ async def get_person_image(person_id: int):
 
 
 @router.get("/{person_id}/details")
-async def get_person_details(person_id: int) -> PersonDetailResponse:
+async def get_person_details(
+    person_id: int,
+    current_user: User = Depends(get_current_active_user)
+) -> PersonDetailResponse:
     """Get detailed information about a person including detection stats."""
     from ...models.database import Alert
     from sqlalchemy import func

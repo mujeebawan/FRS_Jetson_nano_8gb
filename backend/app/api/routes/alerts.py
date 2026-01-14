@@ -12,7 +12,8 @@ import threading
 import queue
 import logging
 
-from ...models.database import get_db, Alert as AlertModel, Person
+from ...models.database import get_db, Alert as AlertModel, Person, User
+from ..deps import get_current_active_user, require_admin
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -89,7 +90,8 @@ async def list_alerts(
     time_range: Optional[str] = None,  # "24h", "7d", "30d", "all"
     threat_level: Optional[str] = None,
     person_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ) -> List[AlertResponse]:
     """List alerts with optional filtering."""
     query = db.query(AlertModel)
@@ -142,7 +144,8 @@ async def export_alerts_csv(
     time_range: Optional[str] = None,
     search: Optional[str] = None,
     threat_level: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """Export alerts to CSV file."""
     from fastapi.responses import StreamingResponse
@@ -221,7 +224,8 @@ async def export_alerts_csv(
 async def get_recent_alerts(
     hours: int = 24,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ) -> List[AlertResponse]:
     """Get recent alerts from the last N hours."""
     cutoff = datetime.now() - timedelta(hours=hours)
@@ -238,7 +242,8 @@ async def get_recent_alerts(
 @router.get("/stats")
 async def get_alert_stats(
     hours: int = 24,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get alert statistics for dashboard."""
     cutoff = datetime.now() - timedelta(hours=hours)
@@ -276,7 +281,8 @@ async def get_alert_stats(
 async def acknowledge_alert(
     alert_id: int,
     acknowledged_by: str = "admin",
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """Acknowledge an alert."""
     alert = db.query(AlertModel).filter(AlertModel.id == alert_id).first()
@@ -297,7 +303,8 @@ async def verify_alert(
     action: str,
     verified_by: str = "guard",
     notes: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """Record guard verification of an alert."""
     alert = db.query(AlertModel).filter(AlertModel.id == alert_id).first()
@@ -317,7 +324,8 @@ async def verify_alert(
 @router.delete("/{alert_id}")
 async def delete_alert(
     alert_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
 ):
     """Delete an alert."""
     alert = db.query(AlertModel).filter(AlertModel.id == alert_id).first()
@@ -405,7 +413,11 @@ def _alert_to_dict(alert: AlertModel) -> dict:
 
 
 @router.get("/{alert_id}/snapshot")
-async def get_alert_snapshot(alert_id: int, db: Session = Depends(get_db)):
+async def get_alert_snapshot(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """Get the captured snapshot image for an alert."""
     from fastapi.responses import Response
 
@@ -436,7 +448,12 @@ async def get_alert_snapshot(alert_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{alert_id}/video")
-async def get_alert_video(request: Request, alert_id: int, db: Session = Depends(get_db)):
+async def get_alert_video(
+    request: Request,
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Get the video clip for an alert (if recording was enabled).
 
@@ -467,7 +484,11 @@ async def get_alert_video(request: Request, alert_id: int, db: Session = Depends
 
 
 @router.get("/{alert_id}/video/exists")
-async def check_alert_video(request: Request, alert_id: int):
+async def check_alert_video(
+    request: Request,
+    alert_id: int,
+    current_user: User = Depends(get_current_active_user)
+):
     """Check if a video clip exists for an alert."""
     video_recorder = request.app.state.video_recorder
     if not video_recorder:
