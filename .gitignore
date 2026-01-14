@@ -88,3 +88,4 @@ data/models/arcface_r100/*.onnx
 dahua_camera_tool
 data/tensorrt_engines/
 models/tensorrt/*.engine
+models/tensorrt/*.onnx
