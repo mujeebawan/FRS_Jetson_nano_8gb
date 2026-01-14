@@ -75,10 +75,14 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("Database tables initialized")
 
-    # Seed initial camera if needed and get primary camera for streaming
+    # Seed initial camera and admin user if needed
+    from .core.seed import seed_admin_user
     db = SessionLocal()
     primary_camera = None
     try:
+        # Seed admin user
+        seed_admin_user(db)
+
         camera_count = seed_initial_cameras(db)
         enabled_cameras = db.query(Camera).filter(Camera.enabled == True).all()
         logger.info(f"Cameras configured: {camera_count} total, {len(enabled_cameras)} enabled")

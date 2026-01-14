@@ -7,6 +7,8 @@ from .persons import router as persons_router
 from .alerts import router as alerts_router
 from .system import router as system_router
 from .cameras import router as cameras_router
+from .auth import router as auth_router
+from .users import router as users_router
 
 api_router = APIRouter()
 
@@ -36,6 +38,8 @@ async def health_check(request: Request):
     }
 
 
+api_router.include_router(auth_router)  # /api/auth/*
+api_router.include_router(users_router)  # /api/users/*
 api_router.include_router(cameras_router, prefix="/cameras", tags=["Cameras"])
 api_router.include_router(stream_router, prefix="/stream", tags=["Stream"])
 api_router.include_router(persons_router, prefix="/persons", tags=["Persons"])

@@ -231,6 +231,33 @@ class SystemConfiguration(Base):
         return f"<SystemConfiguration(key='{self.config_key}', value='{self.config_value}')>"
 
 
+class User(Base):
+    """
+    User model for authentication.
+    Supports role-based access control (admin/user).
+    """
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=True)
+    hashed_password = Column(String(255), nullable=False)
+
+    # Role: 'admin' or 'user'
+    role = Column(String(20), default='user', nullable=False, index=True)
+
+    # Account status
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
+
+
 class Camera(Base):
     """
     Camera model - stores camera configuration for multi-camera support.
