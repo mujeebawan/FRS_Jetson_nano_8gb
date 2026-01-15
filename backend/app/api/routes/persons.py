@@ -15,7 +15,7 @@ from pathlib import Path
 from ...models.database import get_db, Person, FaceEmbedding, User
 from ...config import settings
 from ...core.recognizer import FaceRecognizer
-from ..deps import get_current_active_user, require_admin
+from ..deps import get_current_active_user, require_admin, get_user_from_token_param
 
 router = APIRouter()
 
@@ -644,7 +644,8 @@ async def person_stats(
 @router.get("/{person_id}/image")
 async def get_person_image(
     person_id: int,
-    current_user: User = Depends(get_current_active_user)
+    token: str = None,
+    current_user: User = Depends(get_user_from_token_param)
 ):
     """Get the reference image for a person."""
     from fastapi.responses import Response

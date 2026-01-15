@@ -13,7 +13,7 @@ import queue
 import logging
 
 from ...models.database import get_db, Alert as AlertModel, Person, User
-from ..deps import get_current_active_user, require_admin
+from ..deps import get_current_active_user, require_admin, get_user_from_token_param
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -415,8 +415,9 @@ def _alert_to_dict(alert: AlertModel) -> dict:
 @router.get("/{alert_id}/snapshot")
 async def get_alert_snapshot(
     alert_id: int,
+    token: str = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_user_from_token_param)
 ):
     """Get the captured snapshot image for an alert."""
     from fastapi.responses import Response

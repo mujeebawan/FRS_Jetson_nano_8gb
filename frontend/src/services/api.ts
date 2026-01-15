@@ -9,6 +9,28 @@ export const api = axios.create({
   },
 });
 
+// Add auth token to all requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('frs_access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle 401 responses (token expired)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('frs_access_token');
+      localStorage.removeItem('frs_refresh_token');
+      window.dispatchEvent(new CustomEvent('auth:logout'));
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Stream API
 export const streamApi = {
   start: () => api.get('/stream/start'),
@@ -85,8 +107,12 @@ export const alertsApi = {
     api.post(`/alerts/${alertId}/verify`, null, { params: { action, notes } }),
   delete: (alertId: number) => api.delete(`/alerts/${alertId}`),
   getWebSocketUrl: () => `ws://${API_BASE_URL.replace('http://', '')}/alerts/ws`,
-  getSnapshotUrl: (alertId: number, timestamp?: number) =>
-    `${API_BASE_URL}/alerts/${alertId}/snapshot?t=${timestamp || Date.now()}`,
+  getSnapshotUrl: (alertId: number, timestamp?: number) => {
+    const token = localStorage.getItem('frs_access_token');
+    const params = new URLSearchParams({ t: String(timestamp || Date.now()) });
+    if (token) params.append('token', token);
+    return `${API_BASE_URL}/alerts/${alertId}/snapshot?${params.toString()}`;
+  },
   getVideoUrl: (alertId: number) =>
     `${API_BASE_URL}/alerts/${alertId}/video`,
   checkVideoExists: (alertId: number) =>
@@ -99,9 +125,13 @@ export const alertsApi = {
   },
 };
 
-// Get person reference image URL with cache-busting timestamp
-export const getPersonImageUrl = (personId: number, timestamp?: number) =>
-  `${API_BASE_URL}/persons/${personId}/image?t=${timestamp || Date.now()}`;
+// Get person reference image URL with cache-busting timestamp and auth token
+export const getPersonImageUrl = (personId: number, timestamp?: number) => {
+  const token = localStorage.getItem('frs_access_token');
+  const params = new URLSearchParams({ t: String(timestamp || Date.now()) });
+  if (token) params.append('token', token);
+  return `${API_BASE_URL}/persons/${personId}/image?${params.toString()}`;
+};
 
 // Cameras API
 export const camerasApi = {

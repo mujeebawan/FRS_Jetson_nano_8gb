@@ -80,6 +80,38 @@ async def require_admin(
     return current_user
 
 
+# Auth from query parameter - for image endpoints (browser can't send headers with img src)
+async def get_user_from_token_param(
+    token: str = None,
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Get user from token query parameter.
+    Used for image endpoints where browser can't send Authorization header.
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token required"
+        )
+
+    token_data = decode_token(token)
+    if token_data is None or token_data.token_type != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+
+    user = db.query(User).filter(User.id == token_data.user_id).first()
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive"
+        )
+
+    return user
+
+
 # Optional auth - returns None if no token provided
 async def get_optional_user(
     token: str = Depends(OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)),

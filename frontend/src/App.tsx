@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LiveStream } from './components/LiveStream';
 import { MultiCameraView } from './components/MultiCameraView';
 import { PersonList } from './components/PersonList';
@@ -6,13 +6,75 @@ import { AlertList } from './components/AlertList';
 import { SystemStatus } from './components/SystemStatus';
 import { SystemSettings } from './components/SystemSettings';
 import { CameraList } from './components/CameraList';
-import { Monitor, Users, Bell, Settings, Camera, Grid, Video } from 'lucide-react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Monitor, Users, Bell, Settings, Camera, Grid, Video, LogOut } from 'lucide-react';
 import './App.css';
 
 type Tab = 'dashboard' | 'persons' | 'alerts' | 'cameras' | 'settings';
 type DashboardView = 'single' | 'multi';
 
-function App() {
+// Login component
+function LoginPage() {
+  const { login } = useAuth();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      await login(username, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-page">
+      <div className="login-container">
+        <h1>Face Recognition System</h1>
+        <h2>Login</h2>
+        <form onSubmit={handleSubmit}>
+          {error && <div className="login-error">{error}</div>}
+          <div className="form-group">
+            <label htmlFor="username">Username</label>
+            <input
+              type="text"
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              autoFocus
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <input
+              type="password"
+              id="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+          <button type="submit" disabled={isLoading} className="login-button">
+            {isLoading ? 'Logging in...' : 'Login'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Main app component
+function MainApp() {
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [dashboardView, setDashboardView] = useState<DashboardView>('single');
 
@@ -57,6 +119,12 @@ function App() {
             Settings
           </button>
         </nav>
+        <div className="user-menu">
+          <span className="user-name">{user?.username}</span>
+          <button onClick={logout} className="logout-button" title="Logout">
+            <LogOut size={18} />
+          </button>
+        </div>
       </header>
 
       <main className="app-content">
@@ -123,6 +191,39 @@ function App() {
         <span>Face Recognition Security System - Jetson Orin Nano 8GB</span>
       </footer>
     </div>
+  );
+}
+
+// App wrapper with auth
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Listen for auth:logout events (from API interceptor)
+  useEffect(() => {
+    const handleLogout = () => {
+      window.location.reload();
+    };
+    window.addEventListener('auth:logout', handleLogout);
+    return () => window.removeEventListener('auth:logout', handleLogout);
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  return isAuthenticated ? <MainApp /> : <LoginPage />;
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
