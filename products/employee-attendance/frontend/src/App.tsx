@@ -913,57 +913,57 @@ function EmployeesTab({ token }: { token: string }) {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b">
+                <thead className="bg-gray-100 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Employee</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">ID</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Department</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Position</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Shift</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Employee</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">ID</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Department</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Position</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Shift</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody className="divide-y divide-gray-200">
                   {employees.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-gray-50">
+                    <tr key={emp.id} className="hover:bg-blue-50/50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="relative">
-                            <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center">
-                              <span className="text-sm font-semibold text-blue-600">{emp.name.charAt(0)}</span>
+                            <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                              <span className="text-sm font-bold text-white">{emp.name.charAt(0)}</span>
                             </div>
                             <div className={cn(
-                              "absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[10px]",
-                              emp.has_face ? "bg-green-500 text-white" : "bg-amber-400 text-white"
+                              "absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-white",
+                              emp.has_face ? "bg-green-500 text-white" : "bg-orange-500 text-white"
                             )} title={emp.has_face ? "Face enrolled" : "No face enrolled"}>
                               {emp.has_face ? "✓" : "!"}
                             </div>
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900">{emp.name}</p>
-                            <p className="text-xs text-gray-500">{emp.email || '-'}</p>
+                            <p className="font-semibold text-gray-900">{emp.name}</p>
+                            <p className="text-sm text-gray-600">{emp.email || '-'}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{emp.employee_id}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{emp.department_name || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{emp.position || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{emp.shift_start} - {emp.shift_end}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-800">{emp.employee_id}</td>
+                      <td className="px-4 py-3 text-sm text-gray-800">{emp.department_name || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-800">{emp.position || '-'}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-800">{emp.shift_start} - {emp.shift_end}</td>
                       <td className="px-4 py-3">
-                        <Badge variant={emp.is_active ? 'default' : 'secondary'}>
+                        <Badge variant={emp.is_active ? 'default' : 'secondary'} className={emp.is_active ? "bg-green-600 text-white" : ""}>
                           {emp.is_active ? 'Active' : 'Inactive'}
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => handleView(emp)} className="text-gray-500 hover:text-blue-600 hover:bg-blue-50" title="View">
+                          <Button variant="ghost" size="sm" onClick={() => handleView(emp)} className="text-blue-600 hover:text-blue-800 hover:bg-blue-100" title="View">
                             <Eye className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleEditClick(emp)} className="text-gray-500 hover:text-green-600 hover:bg-green-50" title="Edit">
+                          <Button variant="ghost" size="sm" onClick={() => handleEditClick(emp)} className="text-green-600 hover:text-green-800 hover:bg-green-100" title="Edit">
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete(emp.id, emp.name)} className="text-gray-500 hover:text-red-600 hover:bg-red-50" title="Delete">
+                          <Button variant="ghost" size="sm" onClick={() => handleDelete(emp.id, emp.name)} className="text-red-600 hover:text-red-800 hover:bg-red-100" title="Delete">
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
