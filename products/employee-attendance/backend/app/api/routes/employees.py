@@ -179,21 +179,40 @@ async def create_employee(
             employee.reference_image_path = image_path
             employee.folder_path = employee_folder
 
-            # Try to extract face embedding
+            # Try to extract face embedding using detector
             try:
-                from ...core.recognizer import FaceRecognizer
-                recognizer = FaceRecognizer()
-                embedding = recognizer.get_embedding_from_image(image_path)
-                if embedding is not None:
-                    face_embedding = FaceEmbedding(
-                        employee_id=employee.id,
-                        embedding=embedding.tobytes(),
-                        source="enrollment",
-                        source_image_path=image_path,
-                        confidence=1.0
-                    )
-                    db.add(face_embedding)
-                    logger.info(f"Face enrolled for employee {employee_id}")
+                import cv2
+                from ...main import app
+
+                # Load image
+                img = cv2.imread(image_path)
+                if img is not None:
+                    # Use app's detector to get face embedding
+                    detector = app.state.detector
+                    detections = detector.detect_with_embeddings(img)
+
+                    if detections and detections[0].embedding is not None:
+                        face_embedding = FaceEmbedding(
+                            employee_id=employee.id,
+                            embedding=detections[0].embedding.tobytes(),
+                            source="enrollment",
+                            source_image_path=image_path,
+                            confidence=detections[0].confidence
+                        )
+                        db.add(face_embedding)
+                        logger.info(f"Face enrolled for employee {employee_id} with confidence {detections[0].confidence:.2f}")
+
+                        # Reload recognizer to include new embedding
+                        recognizer = app.state.recognizer
+                        recognizer.add_embedding(
+                            detections[0].embedding,
+                            employee.id,
+                            employee.name
+                        )
+                    else:
+                        logger.warning(f"No face detected in uploaded image for {employee_id}")
+                else:
+                    logger.warning(f"Could not load image: {image_path}")
             except Exception as e:
                 logger.warning(f"Could not extract face embedding: {e}")
 
@@ -268,23 +287,41 @@ async def update_employee(
 
             employee.reference_image_path = image_path
 
-            # Re-enroll face
+            # Re-enroll face using detector
             try:
-                from ...core.recognizer import FaceRecognizer
-                recognizer = FaceRecognizer()
-                embedding = recognizer.get_embedding_from_image(image_path)
-                if embedding is not None:
-                    # Remove old embeddings
-                    db.query(FaceEmbedding).filter(FaceEmbedding.employee_id == employee.id).delete()
-                    # Add new
-                    face_embedding = FaceEmbedding(
-                        employee_id=employee.id,
-                        embedding=embedding.tobytes(),
-                        source="enrollment",
-                        source_image_path=image_path,
-                        confidence=1.0
-                    )
-                    db.add(face_embedding)
+                import cv2
+                from ...main import app
+
+                img = cv2.imread(image_path)
+                if img is not None:
+                    detector = app.state.detector
+                    detections = detector.detect_with_embeddings(img)
+
+                    if detections and detections[0].embedding is not None:
+                        # Remove old embeddings from DB and recognizer
+                        db.query(FaceEmbedding).filter(FaceEmbedding.employee_id == employee.id).delete()
+
+                        # Add new embedding
+                        face_embedding = FaceEmbedding(
+                            employee_id=employee.id,
+                            embedding=detections[0].embedding.tobytes(),
+                            source="enrollment",
+                            source_image_path=image_path,
+                            confidence=detections[0].confidence
+                        )
+                        db.add(face_embedding)
+
+                        # Update recognizer
+                        recognizer = app.state.recognizer
+                        recognizer.remove_person(employee.id)
+                        recognizer.add_embedding(
+                            detections[0].embedding,
+                            employee.id,
+                            employee.name
+                        )
+                        logger.info(f"Face re-enrolled for employee {employee.employee_id}")
+                    else:
+                        logger.warning(f"No face detected in updated image")
             except Exception as e:
                 logger.warning(f"Could not extract face embedding: {e}")
 
