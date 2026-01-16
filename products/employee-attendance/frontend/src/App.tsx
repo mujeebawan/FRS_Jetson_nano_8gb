@@ -400,12 +400,11 @@ function EmployeesTab({ token }: { token: string }) {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   // Camera enrollment states
-  const [showCameraModal, setShowCameraModal] = useState(false);
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<number | null>(null);
   const [streamKey, setStreamKey] = useState(Date.now());
-  const [captureStep, setCaptureStep] = useState<'preview' | 'details'>('preview');
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [photoMode, setPhotoMode] = useState<'upload' | 'camera'>('upload');
+  const [cameraLoading, setCameraLoading] = useState(false);
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -575,11 +574,12 @@ function EmployeesTab({ token }: { token: string }) {
   };
 
   // Camera enrollment functions
-  const openCameraEnroll = async () => {
+  const startCameraMode = async () => {
+    setCameraLoading(true);
     // Start stream first
     try {
       await fetch(`${API_BASE_URL}/stream/start`, {
-        method: 'POST',
+        method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` },
       });
     } catch {
@@ -598,14 +598,12 @@ function EmployeesTab({ token }: { token: string }) {
       console.error('Failed to load cameras:', err);
     }
 
-    setCapturedImage(null);
-    setCaptureStep('preview');
     setStreamKey(Date.now());
-    setShowCameraModal(true);
-    setFormData({ employee_id: '', name: '', email: '', phone: '', department_id: '', position: '', shift_start: '09:00', shift_end: '18:00' });
+    setPhotoMode('camera');
+    setCameraLoading(false);
   };
 
-  const handleCaptureSnapshot = async () => {
+  const captureFromCamera = async () => {
     try {
       const snapshotUrl = selectedCameraId
         ? `${API_BASE_URL}/stream/snapshot/camera/${selectedCameraId}`
@@ -615,212 +613,89 @@ function EmployeesTab({ token }: { token: string }) {
       });
       if (!response.ok) throw new Error('Failed to capture');
       const blob = await response.blob();
-      setCapturedImage(URL.createObjectURL(blob));
-      setCaptureStep('details');
+      // Convert blob to File for form submission
+      const file = new File([blob], 'camera_capture.jpg', { type: 'image/jpeg' });
+      setSelectedImage(file);
+      setImagePreview(URL.createObjectURL(blob));
     } catch (err) {
       console.error('Capture failed:', err);
-      alert('Failed to capture snapshot. Make sure the stream is running.');
+      alert('Failed to capture. Make sure the stream is running and camera is connected.');
     }
   };
 
-  const handleCameraEnroll = async () => {
-    if (!formData.employee_id.trim() || !formData.name.trim()) {
-      alert('Employee ID and Name are required');
-      return;
-    }
+  const handleAddWithCamera = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-    setSaving(true);
-    try {
-      const form = new FormData();
-      form.append('employee_id', formData.employee_id);
-      form.append('name', formData.name);
-      if (formData.email) form.append('email', formData.email);
-      if (formData.phone) form.append('phone', formData.phone);
-      if (formData.department_id) form.append('department_id', formData.department_id);
-      if (formData.position) form.append('position', formData.position);
-      form.append('shift_start', formData.shift_start);
-      form.append('shift_end', formData.shift_end);
-      if (selectedCameraId) form.append('camera_id', selectedCameraId.toString());
-
-      const response = await fetch(`${API_BASE_URL}/employees/enroll-from-camera`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: form,
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        alert(err.detail || 'Failed to enroll from camera');
+    // If camera mode and no image captured, use camera enrollment endpoint
+    if (photoMode === 'camera' && !selectedImage) {
+      if (!formData.employee_id.trim() || !formData.name.trim()) {
+        alert('Employee ID and Name are required');
         return;
       }
 
-      const result = await response.json();
-      alert(`Successfully enrolled ${result.name}!`);
-      setShowCameraModal(false);
-      setCapturedImage(null);
-      setCaptureStep('preview');
-      fetchEmployees();
-    } catch (err) {
-      console.error('Camera enrollment failed:', err);
-      alert('Failed to enroll from camera');
-    } finally {
-      setSaving(false);
+      setSaving(true);
+      try {
+        const form = new FormData();
+        form.append('employee_id', formData.employee_id);
+        form.append('name', formData.name);
+        if (formData.email) form.append('email', formData.email);
+        if (formData.phone) form.append('phone', formData.phone);
+        if (formData.department_id) form.append('department_id', formData.department_id);
+        if (formData.position) form.append('position', formData.position);
+        form.append('shift_start', formData.shift_start);
+        form.append('shift_end', formData.shift_end);
+        if (selectedCameraId) form.append('camera_id', selectedCameraId.toString());
+
+        const response = await fetch(`${API_BASE_URL}/employees/enroll-from-camera`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: form,
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          alert(err.detail || 'Failed to enroll. Make sure face is visible in camera.');
+          return;
+        }
+
+        setShowAddModal(false);
+        resetAddForm();
+        fetchEmployees();
+      } catch (err) {
+        console.error('Camera enrollment failed:', err);
+        alert('Failed to enroll from camera');
+      } finally {
+        setSaving(false);
+      }
+      return;
     }
+
+    // Otherwise use regular add with file upload
+    handleAdd(e);
   };
 
-  const handleRetake = () => {
-    setCapturedImage(null);
-    setCaptureStep('preview');
-    setStreamKey(Date.now());
+  const resetAddForm = () => {
+    setFormData({ employee_id: '', name: '', email: '', phone: '', department_id: '', position: '', shift_start: '09:00', shift_end: '18:00' });
+    setSelectedImage(null);
+    setImagePreview(null);
+    setPhotoMode('upload');
+    setCameras([]);
+    setSelectedCameraId(null);
   };
 
   return (
     <div className="space-y-4">
-      {/* Camera Enrollment Modal */}
-      {showCameraModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Camera className="w-5 h-5 text-blue-600" />
-                {captureStep === 'preview' ? 'Capture Face from Camera' : 'Enter Employee Details'}
-              </h3>
-              <button onClick={() => setShowCameraModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6">
-              {captureStep === 'preview' ? (
-                <>
-                  {/* Camera Selector */}
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Select Camera</label>
-                    <select
-                      value={selectedCameraId || ''}
-                      onChange={(e) => {
-                        setSelectedCameraId(Number(e.target.value));
-                        setStreamKey(Date.now());
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    >
-                      {cameras.map((cam) => (
-                        <option key={cam.id} value={cam.id}>{cam.name} ({cam.ip_address})</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Camera Preview */}
-                  <div className="relative bg-gray-900 rounded-lg overflow-hidden aspect-video">
-                    <img
-                      key={streamKey}
-                      src={selectedCameraId
-                        ? `${API_BASE_URL}/stream/mjpeg/raw/camera/${selectedCameraId}?t=${streamKey}`
-                        : `${API_BASE_URL}/stream/mjpeg/raw?t=${streamKey}`
-                      }
-                      alt="Camera Preview"
-                      className="w-full h-full object-contain"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-48 h-64 border-2 border-dashed border-blue-400/60 rounded-full" />
-                    </div>
-                    <button
-                      onClick={() => setStreamKey(Date.now())}
-                      className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <p className="text-sm text-gray-500 text-center mt-2">Position face clearly in the camera view, then click Capture</p>
-                </>
-              ) : (
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Captured Image */}
-                  <div>
-                    {capturedImage && (
-                      <img src={capturedImage} alt="Captured" className="w-full rounded-lg border" />
-                    )}
-                    <Button variant="outline" onClick={handleRetake} className="w-full mt-2">
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Retake Photo
-                    </Button>
-                  </div>
-
-                  {/* Details Form */}
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
-                      <Input
-                        required
-                        placeholder="EMP001"
-                        value={formData.employee_id}
-                        onChange={(e) => setFormData({...formData, employee_id: e.target.value})}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                      <Input
-                        required
-                        placeholder="Full Name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                      <select
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        value={formData.department_id}
-                        onChange={(e) => setFormData({...formData, department_id: e.target.value})}
-                      >
-                        <option value="">Select</option>
-                        {departments.map((d) => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
-                      <Input
-                        placeholder="Job Title"
-                        value={formData.position}
-                        onChange={(e) => setFormData({...formData, position: e.target.value})}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-3 px-6 py-4 border-t">
-              <Button variant="outline" onClick={() => setShowCameraModal(false)}>Cancel</Button>
-              {captureStep === 'preview' ? (
-                <Button onClick={handleCaptureSnapshot}>
-                  <Camera className="w-4 h-4 mr-2" />
-                  Capture
-                </Button>
-              ) : (
-                <Button onClick={handleCameraEnroll} disabled={saving}>
-                  {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-                  Enroll Employee
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Add Employee Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto py-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 my-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h3 className="text-lg font-semibold">Add Employee</h3>
-              <button onClick={() => { setShowAddModal(false); setSelectedImage(null); setImagePreview(null); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setShowAddModal(false); resetAddForm(); }} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleAdd} className="p-6 space-y-4">
+            <form onSubmit={handleAddWithCamera} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
@@ -902,26 +777,125 @@ function EmployeesTab({ token }: { token: string }) {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Face Photo (for recognition)</label>
-                <div className="flex items-start gap-4">
-                  <div className="flex-1">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageChange}
-                      className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    />
-                    <p className="text-xs text-gray-400 mt-1">Upload a clear front-facing photo for face recognition</p>
-                  </div>
-                  {imagePreview && (
-                    <div className="w-20 h-20 rounded-lg overflow-hidden border-2 border-blue-200">
-                      <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                    </div>
-                  )}
+                <label className="block text-sm font-medium text-gray-700 mb-2">Face Photo (for recognition)</label>
+
+                {/* Toggle between Upload and Camera */}
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setPhotoMode('upload')}
+                    className={cn(
+                      "flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2",
+                      photoMode === 'upload' ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    )}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Upload Photo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startCameraMode}
+                    disabled={cameraLoading}
+                    className={cn(
+                      "flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2",
+                      photoMode === 'camera' ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    )}
+                  >
+                    {cameraLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                    Capture from Camera
+                  </button>
                 </div>
+
+                {photoMode === 'upload' ? (
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageChange}
+                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Upload a clear front-facing photo</p>
+                    </div>
+                    {imagePreview && (
+                      <div className="w-20 h-20 rounded-lg overflow-hidden border-2 border-blue-200">
+                        <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Camera Selector */}
+                    {cameras.length > 0 && (
+                      <select
+                        value={selectedCameraId || ''}
+                        onChange={(e) => {
+                          setSelectedCameraId(Number(e.target.value));
+                          setStreamKey(Date.now());
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      >
+                        {cameras.map((cam) => (
+                          <option key={cam.id} value={cam.id}>{cam.name}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Camera Preview or Captured Image */}
+                    <div className="relative bg-gray-900 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+                      {imagePreview ? (
+                        <img src={imagePreview} alt="Captured" className="w-full h-full object-contain" />
+                      ) : (
+                        <>
+                          <img
+                            key={streamKey}
+                            src={selectedCameraId
+                              ? `${API_BASE_URL}/stream/mjpeg/camera/${selectedCameraId}/raw?t=${streamKey}`
+                              : `${API_BASE_URL}/stream/mjpeg/raw?t=${streamKey}`
+                            }
+                            alt="Camera Preview"
+                            className="w-full h-full object-contain"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-32 h-40 border-2 border-dashed border-blue-400/60 rounded-full" />
+                          </div>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setStreamKey(Date.now())}
+                        className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
+                        title="Refresh stream"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Capture/Retake Buttons */}
+                    <div className="flex gap-2">
+                      {imagePreview ? (
+                        <Button type="button" variant="outline" onClick={() => { setImagePreview(null); setSelectedImage(null); }} className="flex-1">
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Retake
+                        </Button>
+                      ) : (
+                        <Button type="button" onClick={captureFromCamera} className="flex-1">
+                          <Camera className="w-4 h-4 mr-2" />
+                          Capture Photo
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 text-center">
+                      {imagePreview ? 'Photo captured! Click Add Employee to enroll.' : 'Position face in view and click Capture, or click Add Employee to capture automatically.'}
+                    </p>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-end gap-3 pt-4">
-                <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>Cancel</Button>
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button type="button" variant="outline" onClick={() => { setShowAddModal(false); resetAddForm(); }}>Cancel</Button>
                 <Button type="submit" disabled={saving}>
                   {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
                   Add Employee
@@ -1139,16 +1113,10 @@ function EmployeesTab({ token }: { token: string }) {
             className="pl-10"
           />
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={openCameraEnroll}>
-            <Camera className="w-4 h-4 mr-2" />
-            Enroll from Camera
-          </Button>
-          <Button onClick={() => setShowAddModal(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Employee
-          </Button>
-        </div>
+        <Button onClick={() => setShowAddModal(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Add Employee
+        </Button>
       </div>
 
       <Card>
