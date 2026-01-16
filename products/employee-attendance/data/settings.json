@@ -1,0 +1,20 @@
+{
+  "recognition_model": "buffalo_l",
+  "use_tensorrt": true,
+  "use_fp16": true,
+  "faiss_use_gpu": true,
+
+  "detection_confidence": 0.5,
+  "recognition_threshold": 0.4,
+  "frame_skip": 2,
+
+  "deepstream_camera_count": 2,
+
+  "late_threshold_minutes": 15,
+  "checkout_gap_hours": 4.0,
+  "standard_work_hours": 8.0,
+  "attendance_cooldown_seconds": 60,
+  "save_attendance_snapshot": true,
+
+  "enable_motion_trigger": false
+}

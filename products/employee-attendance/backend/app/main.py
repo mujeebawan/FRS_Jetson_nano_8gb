@@ -195,8 +195,12 @@ async def lifespan(app: FastAPI):
     def attendance_callback(detection, frame_data):
         """
         Callback when face is detected - logs attendance with first-in/last-out logic.
-        - First detection of the day = check-in
-        - Subsequent detection after checkout_gap_hours = check-out
+        - First detection of the day = Entry (check-in time)
+        - Every subsequent detection updates exit time (last detection = check-out)
+        - Work hours = time between first and last detection
+
+        Camera 1 (Entrance) - typically first detection
+        Camera 2 (Exit) - typically last detection
         """
         from .api.routes.stream import broadcast_attendance_sync
         global _attendance_cooldown
@@ -274,12 +278,12 @@ async def lifespan(app: FastAPI):
                 snapshot_path = None
 
                 if not attendance_log:
-                    # First detection today = CHECK-IN
+                    # FIRST DETECTION TODAY = ENTRY (Check-in)
                     status, late_mins = calculate_attendance_status(
                         now, employee.shift_start, settings.late_threshold_minutes
                     )
 
-                    # Save snapshot
+                    # Save check-in snapshot
                     if settings.save_attendance_snapshot and camera_frame is not None:
                         snapshot_path = save_attendance_snapshot(
                             employee.id, camera_frame,
@@ -301,41 +305,51 @@ async def lifespan(app: FastAPI):
                     db.commit()
 
                     action_type = "check_in"
-                    logger.info(f"CHECK-IN: {employee.name} at {now.strftime('%H:%M:%S')} - {status}")
+                    logger.info(f"ENTRY: {employee.name} at {now.strftime('%H:%M:%S')} via {camera_name or 'Unknown'} - {status}")
 
-                elif attendance_log.check_in_time and not attendance_log.check_out_time:
-                    # Has check-in but no check-out - check if enough time passed
-                    hours_since_checkin = (now - attendance_log.check_in_time).total_seconds() / 3600
+                else:
+                    # SUBSEQUENT DETECTION = Update exit time (last detection becomes check-out)
+                    # Always update check_out_time with the latest detection
 
-                    if hours_since_checkin >= settings.checkout_gap_hours:
-                        # CHECK-OUT
-                        if settings.save_attendance_snapshot and camera_frame is not None:
-                            snapshot_path = save_attendance_snapshot(
-                                employee.id, camera_frame,
-                                detection.bbox if detection else None,
-                                "checkout"
-                            )
-
-                        attendance_log.check_out_time = now
+                    # Save checkout snapshot (overwrites previous)
+                    if settings.save_attendance_snapshot and camera_frame is not None:
+                        snapshot_path = save_attendance_snapshot(
+                            employee.id, camera_frame,
+                            detection.bbox if detection else None,
+                            "checkout"
+                        )
                         attendance_log.check_out_snapshot = snapshot_path
 
-                        # Calculate work hours
-                        work_hours, overtime = calculate_work_hours(
-                            attendance_log.check_in_time, now, settings.standard_work_hours
-                        )
-                        attendance_log.work_hours = work_hours
-                        attendance_log.overtime_hours = overtime
+                    attendance_log.check_out_time = now
 
-                        db.commit()
+                    # Calculate work hours (time between entry and this detection)
+                    work_hours, overtime = calculate_work_hours(
+                        attendance_log.check_in_time, now, settings.standard_work_hours
+                    )
+                    attendance_log.work_hours = work_hours
+                    attendance_log.overtime_hours = overtime
 
-                        action_type = "check_out"
-                        logger.info(f"CHECK-OUT: {employee.name} at {now.strftime('%H:%M:%S')} - {work_hours}h worked")
+                    db.commit()
+
+                    # Format work hours as hours and minutes
+                    hours = int(work_hours) if work_hours else 0
+                    minutes = int((work_hours - hours) * 60) if work_hours else 0
+
+                    action_type = "check_out"
+                    logger.info(f"EXIT UPDATE: {employee.name} at {now.strftime('%H:%M:%S')} via {camera_name or 'Unknown'} - {hours}h {minutes}m worked")
 
                 # Update cooldown
                 _attendance_cooldown[employee_key] = now
 
                 # Broadcast to connected clients
                 if action_type:
+                    # Format work hours for display
+                    work_hours_display = None
+                    if attendance_log.work_hours:
+                        hours = int(attendance_log.work_hours)
+                        minutes = int((attendance_log.work_hours - hours) * 60)
+                        work_hours_display = f"{hours}h {minutes}m"
+
                     broadcast_attendance_sync({
                         "type": action_type,
                         "employee_id": employee.employee_id,
@@ -345,7 +359,8 @@ async def lifespan(app: FastAPI):
                         "timestamp": now.isoformat(),
                         "status": attendance_log.status if action_type == "check_in" else None,
                         "late_minutes": attendance_log.late_minutes if action_type == "check_in" else None,
-                        "work_hours": attendance_log.work_hours if action_type == "check_out" else None,
+                        "work_hours": attendance_log.work_hours,
+                        "work_hours_display": work_hours_display,
                         "camera": camera_name
                     })
 
