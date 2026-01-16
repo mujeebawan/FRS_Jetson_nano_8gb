@@ -195,12 +195,10 @@ async def lifespan(app: FastAPI):
     def attendance_callback(detection, frame_data):
         """
         Callback when face is detected - logs attendance with first-in/last-out logic.
-        - First detection of the day = Entry (check-in time)
-        - Every subsequent detection updates exit time (last detection = check-out)
-        - Work hours = time between first and last detection
-
-        Camera 1 (Entrance) - typically first detection
-        Camera 2 (Exit) - typically last detection
+        - First detection of the day from ANY camera = Entry (check-in time)
+        - Every subsequent detection from ANY camera updates exit time
+        - Last detection of the day = Exit (check-out time)
+        - Work hours = time between first and last detection (hours + minutes)
         """
         from .api.routes.stream import broadcast_attendance_sync
         global _attendance_cooldown
