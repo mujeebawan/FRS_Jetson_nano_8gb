@@ -44,6 +44,7 @@ interface Employee {
   shift_end: string;
   is_active: boolean;
   has_face: boolean;
+  reference_image_path: string | null;
 }
 
 interface PresentEmployee {
@@ -919,7 +920,7 @@ function EmployeesTab({ token }: { token: string }) {
             <div className="p-6">
               <div className="flex items-start gap-6 mb-6">
                 <div className="w-24 h-24 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
-                  {selectedEmployee.has_face ? (
+                  {(selectedEmployee.has_face || selectedEmployee.reference_image_path) ? (
                     <img
                       src={`${API_BASE_URL}/employees/${selectedEmployee.id}/image`}
                       alt={selectedEmployee.name}
