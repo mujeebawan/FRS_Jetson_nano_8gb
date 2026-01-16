@@ -338,6 +338,134 @@ async def get_employee_image(
     return FileResponse(employee.reference_image_path, media_type="image/jpeg")
 
 
+@router.post("/enroll-from-camera")
+async def enroll_from_camera(
+    employee_id: str = Form(...),
+    name: str = Form(...),
+    email: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    department_id: Optional[int] = Form(None),
+    position: Optional[str] = Form(None),
+    shift_start: Optional[str] = Form("09:00"),
+    shift_end: Optional[str] = Form("18:00"),
+    camera_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
+):
+    """Create employee with face captured from camera."""
+    from fastapi import Request
+    import numpy as np
+
+    # Check if employee_id already exists
+    existing = db.query(Employee).filter(Employee.employee_id == employee_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Employee ID already exists")
+
+    # Get current frame from stream
+    from ...main import app
+    stream = app.state.stream
+
+    if not stream.is_running:
+        raise HTTPException(status_code=400, detail="Stream not running. Start the stream first.")
+
+    # Get raw frame (without overlays) for enrollment
+    if camera_id:
+        camera_index = stream.get_camera_index_by_id(camera_id)
+        if camera_index is None:
+            raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+        frame_data = stream.get_camera_raw_frame(camera_index)
+    else:
+        frame_data = stream.get_latest_raw_frame()
+
+    if frame_data is None or frame_data.frame is None:
+        raise HTTPException(status_code=400, detail="No frame available from camera")
+
+    frame = frame_data.frame
+
+    # Detect face and get embedding
+    detector = app.state.detector
+    recognizer = app.state.recognizer
+
+    detections = detector.detect_with_embeddings(frame)
+    if not detections:
+        raise HTTPException(status_code=400, detail="No face detected in frame. Please position face clearly.")
+
+    # Use the largest face (closest to camera)
+    best_det = max(detections, key=lambda d: d.bbox[2] * d.bbox[3])
+
+    if best_det.embedding is None:
+        raise HTTPException(status_code=400, detail="Could not extract face embedding. Try again.")
+
+    # Parse shift times
+    try:
+        start_time = time.fromisoformat(shift_start) if shift_start else time(9, 0)
+        end_time = time.fromisoformat(shift_end) if shift_end else time(18, 0)
+    except ValueError:
+        start_time = time(9, 0)
+        end_time = time(18, 0)
+
+    # Create employee
+    employee = Employee(
+        employee_id=employee_id,
+        name=name,
+        email=email,
+        phone=phone,
+        department_id=department_id,
+        position=position,
+        shift_start=start_time,
+        shift_end=end_time,
+        is_active=True,
+        join_date=date.today()
+    )
+    db.add(employee)
+    db.flush()
+
+    # Save captured face image
+    import cv2
+    employee_folder = os.path.join(settings.reference_images_dir, str(employee.id))
+    os.makedirs(employee_folder, exist_ok=True)
+
+    # Crop face with padding
+    x, y, w, h = best_det.bbox
+    padding = 50
+    x1 = max(0, x - padding)
+    y1 = max(0, y - padding)
+    x2 = min(frame.shape[1], x + w + padding)
+    y2 = min(frame.shape[0], y + h + padding)
+    face_crop = frame[y1:y2, x1:x2]
+
+    image_path = os.path.join(employee_folder, f"reference_{uuid.uuid4().hex[:8]}.jpg")
+    cv2.imwrite(image_path, face_crop)
+
+    employee.reference_image_path = image_path
+    employee.folder_path = employee_folder
+
+    # Save embedding
+    face_embedding = FaceEmbedding(
+        employee_id=employee.id,
+        embedding=best_det.embedding.tobytes(),
+        source="camera_enrollment",
+        source_image_path=image_path,
+        confidence=best_det.confidence
+    )
+    db.add(face_embedding)
+
+    db.commit()
+
+    # Reload recognizer to include new employee
+    recognizer.load()
+
+    logger.info(f"Employee {employee_id} enrolled from camera with face embedding")
+
+    return {
+        "id": employee.id,
+        "employee_id": employee.employee_id,
+        "name": employee.name,
+        "message": "Employee enrolled from camera successfully",
+        "face_confidence": best_det.confidence
+    }
+
+
 @router.get("/{employee_id}/attendance")
 async def get_employee_attendance(
     employee_id: int,
